@@ -180,10 +180,10 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 
 ## 9. Toggle response view (table / CSV / JSON)
 
-- [ ] Bind `v` (or `ctrl+v`) in the Response window to cycle `Table → CSV → JSON → Table`.
-- [ ] Maintain current format in root model; re-render the response pane accordingly.
-- [ ] Status line reflects current format (e.g., `View: JSON`).
-- [ ] Preserve scroll position per format? MVP: reset to top on switch; note improvement.
+- [x] Bind `v` (or `ctrl+v`) in the Response window to cycle `Table → CSV → JSON → Table`.
+- [x] Maintain current format in root model; re-render the response pane accordingly. (Format state lives in `result.Model`, owned by the root model.)
+- [x] Status line reflects current format (e.g., `View: JSON`).
+- [x] Preserve scroll position per format? MVP: reset to top on switch; note improvement. (Cursor and scroll reset on every switch.)
 
 ---
 

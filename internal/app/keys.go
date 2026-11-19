@@ -3,12 +3,13 @@ package app
 import "github.com/charmbracelet/bubbles/key"
 
 type keyMap struct {
-	Cycle     key.Binding
-	CyclePrev key.Binding
-	Help      key.Binding
-	Quit      key.Binding
-	Close     key.Binding
-	Export    key.Binding
+	Cycle      key.Binding
+	CyclePrev  key.Binding
+	Help       key.Binding
+	Quit       key.Binding
+	Close      key.Binding
+	Export     key.Binding
+	ViewFormat key.Binding
 }
 
 func defaultKeyMap() keyMap {
@@ -37,19 +38,24 @@ func defaultKeyMap() keyMap {
 			key.WithKeys("ctrl+e"),
 			key.WithHelp("ctrl+e", "export"),
 		),
+		ViewFormat: key.NewBinding(
+			key.WithKeys("v"),
+			key.WithHelp("v", "view"),
+		),
 	}
 }
 
 // ShortHelp implements help.KeyMap.
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Cycle, k.Export, k.Help, k.Quit}
+	return []key.Binding{k.Cycle, k.Export, k.ViewFormat, k.Help, k.Quit}
 }
 
 // FullHelp implements help.KeyMap.
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Cycle, k.CyclePrev},
-		{k.Export, k.Help, k.Close},
+		{k.Export, k.ViewFormat},
+		{k.Help, k.Close},
 		{k.Quit},
 	}
 }

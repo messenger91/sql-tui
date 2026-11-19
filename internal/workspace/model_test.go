@@ -249,6 +249,27 @@ func TestConnectFailureShowsError(t *testing.T) {
 	}
 }
 
+func TestActivationSucceededClearsBusy(t *testing.T) {
+	m, _, _, _ := newTestWorkspace(t)
+	m = addSQLiteConnection(t, m, "local")
+
+	m, cmd := m.Update(keyType(tea.KeyEnter))
+	if !m.busy {
+		t.Fatal("activation did not start")
+	}
+	for _, msg := range collect(cmd) {
+		if activated, ok := msg.(ActivatedMsg); ok {
+			m.ActivationSucceeded(activated.Connection.ID)
+		}
+	}
+	if m.busy {
+		t.Fatal("activation success did not clear the busy state")
+	}
+	if strings.Contains(m.View(), "connecting") {
+		t.Fatalf("view still shows connecting:\n%s", m.View())
+	}
+}
+
 func TestEmptyStateView(t *testing.T) {
 	m, _, _, _ := newTestWorkspace(t)
 	view := m.View()

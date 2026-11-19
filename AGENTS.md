@@ -2,7 +2,7 @@
 
 ## Current state
 
-Completed: §0–§6.3 and §8 — bootstrap, `internal/db` (full SQLite; MySQL/Postgres connect only), root TUI shell, workspace pane, query editor, all three result views, and CSV/JSON export to file or clipboard. Next: §9 view-toggle key (completes M3). MySQL/Postgres schema introspection returns `ErrUnsupportedSchema` until M5. `TODO.md` is authoritative for what is implemented.
+Completed: §0–§9 — bootstrap, `internal/db` (full SQLite; MySQL/Postgres connect only), root TUI shell, workspace pane, query editor, table/CSV/JSON result views, view toggle, and export to file or clipboard. **M3 is complete.** Next: M4 favorites (§7), then M5 multi-driver schema introspection. `TODO.md` is authoritative for what is implemented.
 
 ## Source of truth
 
@@ -45,7 +45,7 @@ These are easy to violate when writing the first implementation:
 
 - `connections.json` is `{"connections":[...]}` written atomically with 0600. A missing `readOnly` field loads as `true`; keep that default when touching the store.
 - The workspace owns its own dialogs (add/edit form, delete confirm, connect error). It exposes them via `Modal()` and reports `CapturesInput()`, which the root model checks **before** global `tab`/help handling. Add new modal keys there, not in `app`.
-- Activation is message-based: workspace emits `ActivatedMsg`; the root model focuses the query pane, calls `workspace.SetActive`, and starts an async `db.LoadSchema`. Editing the active connection re-emits `ActivatedMsg` so the schema is reloaded.
+- Activation is message-based: workspace emits `ActivatedMsg`; the root model focuses the query pane, calls `workspace.ActivationSucceeded` (which also clears the `connecting…` spinner), and starts an async `db.LoadSchema`. Editing the active connection re-emits `ActivatedMsg` so the schema is reloaded. If a new activation message is ever added, clear `busy` there too or the spinner runs forever.
 - DSNs are masked in the list (`maskDSN`), but the form and the on-disk JSON keep them plaintext.
 - `main` must call `model.Close()` after `tea.NewProgram(...).Run()`; the manager is a pointer inside a copied model, so closing there releases all handles.
 
@@ -61,7 +61,8 @@ These are easy to violate when writing the first implementation:
 
 - `result.Model` owns the raw `db.QueryResult` for export (§8) and the rendered table. Read it through `Result()`; do not duplicate result state in the root model.
 - `internal/export` owns value formatting (`FormatValue`, `ValueRows`) and serialization (`WriteCSV`, `CSVString`); result views and the §8 exporter must use it rather than reimplementing formatting. `NULL` serializes to the literal `NULL`.
-- CSV/JSON views render through a `bubbles/viewport` and are switched with `SetFormat`; the `v` key binding arrives in §9. Long lines are clipped by the viewport (no horizontal scroll).
+- `v` cycles the result view only when the results pane is focused; `CycleFormat` resets table cursor and viewport offset on every switch (MVP behavior).
+- CSV/JSON views render through a `bubbles/viewport` and are switched with `SetFormat`/`CycleFormat`. Long lines are clipped by the viewport (no horizontal scroll).
 - JSON uses an ordered-object marshaler (`internal/export/json.go`) because `map[string]any` would sort keys. Numbers/bools stay JSON-native; blobs and times become strings; duplicate column names are preserved.
 - Values are stringified once by `FormatValue`: `NULL`, RFC3339 time, `0x…` for binary blobs, printable `[]byte` as text, and newlines/tabs escaped so rows stay one line (this also keeps CSV records single-line).
 - Column widths are natural but capped (3–40) and shrunk to fit the pane; cells are ellipsized by `bubbles/table`. There is no horizontal scrolling, by design.

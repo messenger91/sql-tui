@@ -224,3 +224,52 @@ func TestJSONView(t *testing.T) {
 		t.Fatalf("lines = %d, want 12", len(lines))
 	}
 }
+
+func TestCycleFormat(t *testing.T) {
+	m := New()
+	m.SetSize(60, 10)
+	m.SetResult(sampleResult())
+
+	steps := []Format{FormatCSV, FormatJSON, FormatTable}
+	for _, want := range steps {
+		if got := m.CycleFormat(); got != want {
+			t.Fatalf("cycle = %q, want %q", got, want)
+		}
+		if m.Format() != want {
+			t.Fatalf("format = %q, want %q", m.Format(), want)
+		}
+		if !strings.Contains(ansi.Strip(m.View()), string(want)) {
+			t.Fatalf("status missing %q:\n%s", want, m.View())
+		}
+	}
+}
+
+func TestCycleFormatResetsScroll(t *testing.T) {
+	res := db.QueryResult{Columns: []string{"id"}}
+	for i := 0; i < 40; i++ {
+		res.Rows = append(res.Rows, []any{int64(i)})
+	}
+	res.RowCount = len(res.Rows)
+
+	m := New()
+	m.SetSize(40, 8)
+	m.SetResult(res)
+	m.Focus()
+
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if m.table.Cursor() == 0 {
+		t.Fatal("table cursor did not move")
+	}
+
+	m.CycleFormat() // CSV
+	m.viewport.SetYOffset(5)
+	m.CycleFormat() // JSON
+	if m.viewport.YOffset != 0 {
+		t.Fatalf("viewport offset = %d after switch", m.viewport.YOffset)
+	}
+	m.CycleFormat() // table
+	if m.table.Cursor() != 0 {
+		t.Fatalf("table cursor = %d after switch", m.table.Cursor())
+	}
+}

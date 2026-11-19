@@ -119,6 +119,13 @@ func (m *Model) SetActive(id string) {
 	m.activeID = id
 }
 
+// ActivationSucceeded marks the connection active and clears the connecting
+// state; the root model calls it when it receives ActivatedMsg.
+func (m *Model) ActivationSucceeded(id string) {
+	m.activeID = id
+	m.busy = false
+}
+
 // CapturesInput reports whether a form or dialog must receive keys before
 // global pane navigation.
 func (m Model) CapturesInput() bool {

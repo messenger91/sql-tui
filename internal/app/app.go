@@ -129,7 +129,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		connection := msg.Connection
 		m.active = &connection
 		m.focus = FocusQuery
-		m.workspace.SetActive(connection.ID)
+		m.workspace.ActivationSucceeded(connection.ID)
 		m.syncFocus()
 		return m, m.loadSchema(connection)
 	case workspace.DeactivatedMsg:
@@ -322,6 +322,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Help):
 		m.help.ShowAll = !m.help.ShowAll
 		m.resize()
+		return m, nil
+	case key.Matches(msg, m.keys.ViewFormat):
+		if m.focus != FocusResult {
+			return m, nil
+		}
+		m.results.CycleFormat()
 		return m, nil
 	case key.Matches(msg, m.keys.Export):
 		if m.focus != FocusResult {

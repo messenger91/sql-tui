@@ -12,6 +12,7 @@ import (
 
 	"github.com/messenger91/sql-tui/internal/db"
 	"github.com/messenger91/sql-tui/internal/query"
+	"github.com/messenger91/sql-tui/internal/result"
 	"github.com/messenger91/sql-tui/internal/workspace"
 )
 
@@ -202,6 +203,9 @@ func TestActivationFocusesQueryAndLoadsSchema(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("activation did not schedule a schema load")
 	}
+	if view := ansi.Strip(m.workspace.View()); strings.Contains(view, "connecting") {
+		t.Fatalf("workspace still shows the connecting spinner:\n%s", view)
+	}
 }
 
 func TestSchemaResultOnlyAppliesToActiveConnection(t *testing.T) {
@@ -367,5 +371,29 @@ func TestResultTableRendersInPane(t *testing.T) {
 		if width := ansi.StringWidth(line); width > 80 {
 			t.Fatalf("line %d width %d > 80: %q", i, width, line)
 		}
+	}
+}
+
+func TestViewToggleCyclesFormats(t *testing.T) {
+	m := openActive(t, newSized(t, 80, 24))
+	m = executeSQL(t, m, "SELECT 42 AS answer")
+
+	steps := []result.Format{result.FormatCSV, result.FormatJSON, result.FormatTable}
+	for _, want := range steps {
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+		m = updated.(Model)
+		if m.results.Format() != want {
+			t.Fatalf("format = %q, want %q", m.results.Format(), want)
+		}
+	}
+}
+
+func TestViewToggleIgnoredOutsideResults(t *testing.T) {
+	m := newSized(t, 80, 24) // workspace focus
+	before := m.results.Format()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+	m = updated.(Model)
+	if m.results.Format() != before {
+		t.Fatalf("format changed to %q outside results", m.results.Format())
 	}
 }

@@ -113,10 +113,30 @@ func (m Model) Result() (db.QueryResult, bool) { return m.result, m.has }
 // Format returns the active result format.
 func (m Model) Format() Format { return m.format }
 
-// SetFormat switches the rendering (§9 cycles this).
+// SetFormat switches the rendering (§9 cycles this) and resets scroll state.
 func (m *Model) SetFormat(format Format) {
 	m.format = format
+	m.resetScroll()
 	m.rebuild()
+}
+
+// CycleFormat advances table → CSV → JSON → table.
+func (m *Model) CycleFormat() Format {
+	switch m.format {
+	case FormatTable:
+		m.SetFormat(FormatCSV)
+	case FormatCSV:
+		m.SetFormat(FormatJSON)
+	default:
+		m.SetFormat(FormatTable)
+	}
+	return m.format
+}
+
+func (m *Model) resetScroll() {
+	m.viewport.SetYOffset(0)
+	m.table.SetCursor(0)
+	m.table.GotoTop()
 }
 
 // Update handles navigation for the active view.
