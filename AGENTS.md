@@ -2,7 +2,7 @@
 
 ## Current state
 
-Completed: all planned sections — bootstrap, `internal/db` (SQLite/MySQL/Postgres connect/execute/schema), root shell, workspace, query editor, result views/export, favorites, schema browser + autocomplete, multi-tab async streaming, inline editing with transactional apply, plus mouse support and narrow-terminal collapse. **M9 is complete.** Remaining unchecked TODO items are explicitly optional or refinements (in-place post-commit refresh, unique-index editing fallback). `TODO.md` is authoritative for details.
+Completed: all planned sections — bootstrap, `internal/db` (SQLite/MySQL/Postgres connect/execute/schema), root shell, workspace, query editor, result views/export, favorites, schema browser + autocomplete, multi-tab async streaming, inline editing with transactional apply, plus mouse support and narrow-terminal collapse. **M9 and the dependency-free §15 stretch items are complete.** Remaining unchecked items need either a product decision or a new dependency: keyring credential storage, Parquet export, and virtualized >100k tables. `TODO.md` is authoritative for details.
 
 ## Source of truth
 
@@ -50,6 +50,16 @@ These are easy to violate when writing the first implementation:
 - Activation is message-based: workspace emits `ActivatedMsg`; the root model focuses the query pane, calls `workspace.ActivationSucceeded` (which also clears the `connecting…` spinner), and starts an async `db.LoadSchema`. Editing the active connection re-emits `ActivatedMsg` so the schema is reloaded. If a new activation message is ever added, clear `busy` there too or the spinner runs forever.
 - DSNs are masked in the list (`maskDSN`), but the form and the on-disk JSON keep them plaintext.
 - `main` must call `model.Close()` after `tea.NewProgram(...).Run()`; the manager is a pointer inside a copied model, so closing there releases all handles.
+
+## Stretch-feature gotchas
+
+- `db.ParseDSN` normalizes URL-style DSNs before `sql.Open`; `Connection.DSN` stays as entered for display, so `maskDSN` still sees URLs.
+- `Connection.Options["schema"]` is applied after ping (`SET search_path` / `USE`); SQLite rejects it. The connection form exposes it as the optional `Schema` field.
+- `history.json` is loaded asynchronously on `Init` and seeded into every session editor; `recordHistory` only runs when a query actually starts. New tabs are seeded explicitly in `focusSessionForConnection`/`newTab`/`closeSession`.
+- `x` explains the first statement via `db.Explain`; SQLite trees are built from `id/parent/detail`, everything else renders text rows. Plans open in the generic modal and are height-clipped.
+- Markdown export lives in `internal/export/markdown.go` and is part of `Serialize`/`WriteFile`; the dialog cycle is CSV → JSON → Markdown.
+- Table layout keys live in `result.Model.Update`: `H` toggles hide, `[`/`]` resize, `0` resets. Hidden/resized columns persist by lowercased column name across view switches and matching results. Rebuild clears rows before changing columns to avoid a bubbles/table panic.
+- Adding keyring or Parquet support requires new dependencies — do not add them without explicit approval.
 
 ## DML / preview gotchas
 

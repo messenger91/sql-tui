@@ -20,15 +20,20 @@ apply.
 ## Features
 
 - **Connections** for SQLite/MySQL/Postgres, persisted to `connections.json`
-  (0600, atomic writes). Connections are read-only by default; flip the
-  `Access` field to `writable` in the add/edit form to enable inline editing.
-- **Query editor** with 50-entry history (`ctrl+↑/↓`), multi-statement
-  splitting (string/comment/dollar-quote aware), and a 50 ms-debounced,
-  schema-aware autocomplete popup (`ctrl+space`).
+  (0600, atomic writes). URL-style DSNs (`mysql://…`, `postgres://…`,
+  `sqlite://…`) and native DSNs are both accepted. Connections are read-only
+  by default; flip the `Access` field to `writable` in the add/edit form to
+  enable inline editing. An optional `Schema` field sets Postgres
+  `search_path` or the MySQL database.
+- **Query editor** with session history (`ctrl+↑/↓`) persisted across restarts
+  to `history.json`, multi-statement splitting (string/comment/dollar-quote
+  aware), and a 50 ms-debounced, schema-aware autocomplete popup
+  (`ctrl+space`). `x` shows the driver query plan.
 - **Schema browser** (`ctrl+b`): expandable table/view/column tree with PK and
   FK hints, fuzzy filter, and identifier insertion at the cursor.
 - **Results**: table / CSV / JSON views (`v`), capped at 10,000 rows with
-  truncation markers, export to file or clipboard (`ctrl+e`).
+  truncation markers, Markdown/CSV/JSON export to file or clipboard
+  (`ctrl+e`), plus column hide/resize (`H`, `[`, `]`, `0`).
 - **Favorites**: named SQL snippets persisted to `favorites.json`
   (`ctrl+s` to save, `ctrl+f` to browse).
 - **Multi-tab sessions**: one editor + result view per tab, executed
@@ -81,12 +86,14 @@ DSNs are stored in plaintext locally; passwords are masked in the list UI.
 | `ctrl+space` | open autocomplete |
 | `ctrl+↑` / `ctrl+↓` | query history |
 | `ctrl+b` | schema browser (`ctrl+r` inside refreshes) |
+| `x` | EXPLAIN the current statement (`Query plan` modal) |
 | `ctrl+s` / `ctrl+f` | save / browse favorites |
 | `v` | cycle table → CSV → JSON (results pane) |
 | `ctrl+e` | export CSV/JSON to file or clipboard (results pane) |
 | `e`, `ctrl+n`, `m` | edit cell, set NULL, row menu (results pane) |
 | `p` | preview generated SQL, `enter` applies transactionally |
 | `ctrl+z` / `ctrl+shift+z` | revert row / all pending edits |
+| `H`, `[`, `]`, `0` | hide column, narrow/widen, reset layout (results) |
 | `esc` | cancel running query, close overlay |
 | `ctrl+c` | cancel the running query, then quit |
 | `?` | toggle help (outside the editor) |
@@ -101,6 +108,7 @@ State lives under your config directory (honours `XDG_CONFIG_HOME`):
 
 - `sql-tui/connections.json` — connections, 0600, atomic writes
 - `sql-tui/favorites.json` — favorite scripts, 0600
+- `sql-tui/history.json` — last 200 executed statements, 0600
 
 Result sets are capped at 10,000 in-memory rows (truncation is shown in the
 status line). Favorite/connection dialogs always ask before overwriting.
@@ -149,3 +157,6 @@ internal/styles/    Lip Gloss theme
 - Pending edits are applied transactionally; the post-commit view refreshes by
   re-running the original query.
 - Subquery-aware autocomplete scoping and per-cell coloring are best-effort.
+- Keyring credential storage and Parquet export are not implemented because
+  they require additional dependencies; DSNs are plaintext at 0600 and exports
+  are CSV/JSON/Markdown.

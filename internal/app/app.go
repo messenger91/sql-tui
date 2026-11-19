@@ -631,7 +631,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.BrowseFav) && m.focus == FocusQuery:
 		m.favorites.OpenBrowse()
 		return m, nil
-	case key.Matches(msg, m.keys.Explain) && m.focus == FocusQuery:
+	case key.Matches(msg, m.keys.Explain) && m.focus != FocusWorkspace:
 		return m.startExplain()
 	case key.Matches(msg, m.keys.BrowseSchema):
 		if m.active == nil {

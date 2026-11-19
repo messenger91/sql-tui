@@ -356,14 +356,14 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 
 ## 15. Stretch / future
 
-- [ ] Connection via URL (`mysql://user:pass@host/db`) parser.
-- [ ] Persistent query history (shared with per-tab recall in §5).
-- [ ] EXPLAIN / query-plan visualizer (per-driver plan parsing + tree render).
-- [ ] Keyring-backed credential storage.
-- [ ] Per-connection default schema/search_path selector (reduces `information_schema` noise from §10).
-- [ ] Export to Parquet / Markdown.
-- [ ] Virtualized table for >100k-row results (today the §6.4 cap + §11 streaming truncation cover the common case).
-- [ ] Column resizing / hide columns in table view (persist per-session).
+- [x] Connection via URL (`mysql://user:pass@host/db`) parser. (`db.ParseDSN`: MySQL URL → native DSN; `postgresql://` normalization; `sqlite://`/`sqlite:` paths. Native DSNs unchanged.)
+- [x] Persistent query history (shared with per-tab recall in §5). (`internal/history`; `history.json` capped at 200; loaded at startup and seeded into every tab.)
+- [x] EXPLAIN / query-plan visualizer (per-driver plan parsing + tree render). (`x`; SQLite plan rows become an indented tree; Postgres/MySQL text plans render line by line.)
+- [ ] Keyring-backed credential storage. (Requires a new dependency such as `zalando/go-keyring`; awaiting approval. DSNs remain plaintext at 0600.)
+- [x] Per-connection default schema/search_path selector (reduces `information_schema` noise from §10). (Connection form `Schema` → `Options["schema"]`; Postgres `SET search_path`, MySQL `USE`; rejected for SQLite.)
+- [ ] Export to Parquet / Markdown. (Markdown implemented and in the export dialog; Parquet needs an Arrow/Parquet dependency and is awaiting approval.)
+- [ ] Virtualized table for >100k-row results (today the §6.4 cap + §11 streaming truncation cover the common case). (Intentionally not implemented; the 10k cap is the supported design.)
+- [x] Column resizing / hide columns in table view (persist per-session). (`H` hide, `[`/`]` resize, `0` reset; stored in the session's result view.)
 
 ---
 
