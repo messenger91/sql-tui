@@ -88,7 +88,9 @@ func New(store *Store, manager *db.Manager) Model {
 	l.SetFilteringEnabled(true)
 	l.DisableQuitKeybindings()
 
-	tables := list.New(nil, list.NewDefaultDelegate(), 20, 5)
+	tablesDelegate := list.NewDefaultDelegate()
+	tablesDelegate.ShowDescription = false
+	tables := list.New(nil, tablesDelegate, 20, 5)
 	tables.SetShowTitle(false)
 	tables.SetShowHelp(false)
 	tables.SetShowStatusBar(false)
@@ -140,6 +142,9 @@ func (m *Model) SetTables(names []string) {
 	m.rebuildList()
 }
 
+// WorkspaceTables exposes the table dropdown names for tests.
+func (m Model) WorkspaceTables() []string { return m.tableNames }
+
 // WorkspaceConnections exposes the in-memory connection list for tests.
 func (m Model) WorkspaceConnections() []db.Connection { return m.connections }
 
@@ -159,6 +164,14 @@ func (m *Model) toggleTables() {
 type FetchTableMsg struct {
 	Table string
 }
+
+// TableInfoMsg asks the root model to show table metadata.
+type TableInfoMsg struct {
+	Table string
+}
+
+// DBMLMsg asks the root model to render the connection's schema as DBML.
+type DBMLMsg struct{}
 
 // SetActive marks the connection that the query pane is using.
 func (m *Model) SetActive(id string) {
@@ -350,6 +363,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 				return m, func() tea.Msg { return FetchTableMsg{Table: name} }
 			}
 			return m, nil
+		case "i":
+			selected := m.tables.SelectedItem()
+			if entry, ok := selected.(tableName); ok {
+				name := string(entry.name)
+				return m, func() tea.Msg { return TableInfoMsg{Table: name} }
+			}
+			return m, nil
+		case "D":
+			return m, func() tea.Msg { return DBMLMsg{} }
 		}
 		var cmd tea.Cmd
 		m.tables, cmd = m.tables.Update(msg)
@@ -366,6 +388,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	case "t":
 		m.toggleTables()
 		return m, nil
+	case "D":
+		return m, func() tea.Msg { return DBMLMsg{} }
 	case "a":
 		m.OpenAdd()
 		return m, nil

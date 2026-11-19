@@ -89,6 +89,7 @@ type Model struct {
 	active       *db.Connection
 	schemaLoad   bool
 	confirmClose session.ID
+	doc          *docViewer
 
 	sender          *senderHolder
 	runners         *runnerGroup
@@ -233,6 +234,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.executeSQL(msg.SQL)
 	case workspace.FetchTableMsg:
 		return m.executeSQL(m.fetchTableSQL(msg.Table))
+	case workspace.TableInfoMsg:
+		return m.startTableInfo(msg.Table)
+	case workspace.DBMLMsg:
+		return m.openDBML()
 	case favorites.LoadMsg:
 		if s := m.activeSession(); s != nil {
 			s.SetSQL(msg.SQL)
@@ -254,6 +259,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case applyDoneMsg:
 		return m.handleApplyDone(msg)
+	case tableInfoDoneMsg:
+		return m.handleTableInfoDone(msg)
 	case explainDoneMsg:
 		if msg.Err != nil {
 			m.openModal("Explain failed", msg.Err.Error())
@@ -554,6 +561,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.helpOpen {
 		return m.handleHelpKey(msg)
+	}
+	if m.doc != nil {
+		return m.handleDocKey(msg)
 	}
 	if m.menu != nil {
 		return m.handleCommandMenuKey(msg)
@@ -1052,6 +1062,8 @@ func (m Model) View() string {
 		view = m.renderModal(view, lay, modalBox{Title: "Keybindings", Body: helpText()})
 	} else if m.menu != nil {
 		view = m.renderModal(view, lay, modalBox{Title: "Command menu", Body: m.commandMenuView()})
+	} else if m.doc != nil {
+		view = m.renderDoc(view, lay)
 	} else if m.cellEdit != nil {
 		title := fmt.Sprintf("Edit cell · %s (row %d)", m.cellEdit.column, m.cellEdit.row+1)
 		view = m.renderModal(view, lay, modalBox{Title: title, Body: m.cellEdit.view()})
@@ -1170,6 +1182,7 @@ func (m *Model) resize() {
 	if m.browser != nil {
 		m.browser.SetSize(lay.width, lay.height)
 	}
+	m.resizeDoc()
 	if m.active != nil {
 		m.workspace.SetActive(m.active.ID)
 	}

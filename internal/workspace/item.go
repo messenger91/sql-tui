@@ -65,7 +65,7 @@ type tableName struct {
 }
 
 func (t tableName) Title() string       { return t.name }
-func (t tableName) Description() string { return "SELECT * · LIMIT 100" }
+func (t tableName) Description() string { return "" }
 func (t tableName) FilterValue() string { return strings.ToLower(t.name) }
 
 func items(connections []db.Connection, activeID string) []list.Item {

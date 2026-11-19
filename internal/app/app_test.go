@@ -340,13 +340,15 @@ func runMsgSync(t *testing.T, m Model, msg tea.Msg) Model {
 
 	updated, cmd := m.Update(msg)
 	m = updated.(Model)
+
+	var pending []tea.Msg
 	if cmd != nil {
-		_ = collectCmds(cmd)
+		pending = append(pending, collectCmds(cmd)...)
 	}
 	m.runners.wait()
 
 	mu.Lock()
-	pending := append([]tea.Msg(nil), messages...)
+	pending = append(pending, messages...)
 	mu.Unlock()
 	for _, msg := range pending {
 		updated, _ = m.Update(msg)

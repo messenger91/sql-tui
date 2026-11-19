@@ -26,6 +26,8 @@ func helpText() string {
 		"  enter             connect",
 		"  /                 filter",
 		"  t                 table dropdown (fetch with LIMIT 100)",
+		"  i                 table info (in the table dropdown)",
+		"  D                 view DBML for the connection",
 		"",
 		"query",
 		"  ctrl+r / F5       execute",

@@ -54,7 +54,7 @@ func TestCommandMenuQuits(t *testing.T) {
 	m := newSized(t, 80, 24)
 	m.focus = FocusResult
 	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
-	for i := 0; i < 10; i++ { // last item: Quit
+	for i := 0; i < 11; i++ { // last item: Quit
 		m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyDown})
 	}
 	_, cmd := appUpdate(t, m, tea.KeyMsg{Type: tea.KeyEnter})

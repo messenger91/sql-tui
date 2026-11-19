@@ -55,6 +55,10 @@ func (m Model) commandItems() []commandItem {
 			_, cmd := m.openExport()
 			return cmd
 		}},
+		{label: "View DBML", hint: "D", run: func(m *Model) tea.Cmd {
+			_, cmd := m.openDBML()
+			return cmd
+		}},
 		{label: "Refresh schema", hint: "", run: func(m *Model) tea.Cmd {
 			if m.active == nil {
 				return nil
