@@ -202,3 +202,25 @@ func TestCSVViewFitsHeight(t *testing.T) {
 		t.Fatalf("lines = %d, want 8", len(lines))
 	}
 }
+
+func TestJSONView(t *testing.T) {
+	m := New()
+	m.SetSize(60, 12)
+	m.SetResult(sampleResult())
+	m.SetFormat(FormatJSON)
+
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, `"id"`) || !strings.Contains(view, `"name"`) {
+		t.Fatalf("keys missing:\n%s", view)
+	}
+	if !strings.Contains(view, `1`) || !strings.Contains(view, `"ada"`) || !strings.Contains(view, `null`) {
+		t.Fatalf("values missing:\n%s", view)
+	}
+	if !strings.Contains(view, "json") {
+		t.Fatalf("format missing from status:\n%s", view)
+	}
+	lines := strings.Split(view, "\n")
+	if len(lines) != 12 {
+		t.Fatalf("lines = %d, want 12", len(lines))
+	}
+}

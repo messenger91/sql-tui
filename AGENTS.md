@@ -2,7 +2,7 @@
 
 ## Current state
 
-Completed: §0–§6.2 — bootstrap, `internal/db` (full SQLite; MySQL/Postgres connect only), root TUI shell, workspace pane, query editor, table results, and the CSV view. The format toggle UI lands in §9; for now `result.Model.SetFormat` switches views. Next: JSON view, export. MySQL/Postgres schema introspection returns `ErrUnsupportedSchema` until M5. `TODO.md` is authoritative for what is implemented.
+Completed: §0–§6.3 — bootstrap, `internal/db` (full SQLite; MySQL/Postgres connect only), root TUI shell, workspace pane, query editor, and all three result views (table/CSV/JSON). The format toggle UI (§9) and export (§8) are next; `result.Model.SetFormat` already switches views. MySQL/Postgres schema introspection returns `ErrUnsupportedSchema` until M5. `TODO.md` is authoritative for what is implemented.
 
 ## Source of truth
 
@@ -54,6 +54,7 @@ These are easy to violate when writing the first implementation:
 - `result.Model` owns the raw `db.QueryResult` for export (§8) and the rendered table. Read it through `Result()`; do not duplicate result state in the root model.
 - `internal/export` owns value formatting (`FormatValue`, `ValueRows`) and serialization (`WriteCSV`, `CSVString`); result views and the §8 exporter must use it rather than reimplementing formatting. `NULL` serializes to the literal `NULL`.
 - CSV/JSON views render through a `bubbles/viewport` and are switched with `SetFormat`; the `v` key binding arrives in §9. Long lines are clipped by the viewport (no horizontal scroll).
+- JSON uses an ordered-object marshaler (`internal/export/json.go`) because `map[string]any` would sort keys. Numbers/bools stay JSON-native; blobs and times become strings; duplicate column names are preserved.
 - Values are stringified once by `FormatValue`: `NULL`, RFC3339 time, `0x…` for binary blobs, printable `[]byte` as text, and newlines/tabs escaped so rows stay one line (this also keeps CSV records single-line).
 - Column widths are natural but capped (3–40) and shrunk to fit the pane; cells are ellipsized by `bubbles/table`. There is no horizontal scrolling, by design.
 - `SetResult` must rebuild the table **before** `SetCursor(0)`: the table clamps the cursor against the current row count, so setting it first leaves the cursor at -1.

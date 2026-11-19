@@ -187,8 +187,11 @@ func (m *Model) rebuild() {
 		}
 		m.viewport.SetContent(strings.TrimRight(text, "\n"))
 	case FormatJSON:
-		// Filled in by §6.3.
-		m.viewport.SetContent("JSON view is not implemented yet")
+		text, err := export.JSONString(m.result)
+		if err != nil {
+			text = "error: " + err.Error()
+		}
+		m.viewport.SetContent(strings.TrimRight(text, "\n"))
 	default:
 		m.rebuildTable()
 	}

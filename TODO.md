@@ -136,9 +136,9 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 - [x] Show header row as first line.
 
 ### 6.3 JSON view
-- [ ] Render as a JSON array of objects (column name → value).
-- [ ] Use `encoding/json` with `json.MarshalIndent` (2-space indent) for readability.
-- [ ] Handle non-marshalable values (`[]byte`, `time.Time`) by converting to strings before marshal.
+- [x] Render as a JSON array of objects (column name → value).
+- [x] Use `encoding/json` with `json.MarshalIndent` (2-space indent) for readability. (Uses `json.Encoder` + `SetIndent` through an ordered object so column order is preserved.)
+- [x] Handle non-marshalable values (`[]byte`, `time.Time`) by converting to strings before marshal.
 
 ### 6.4 Large results
 - [ ] Cap in-memory result rows (e.g., 10,000) and display `Showing first N rows` warning.
