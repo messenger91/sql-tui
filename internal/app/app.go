@@ -795,8 +795,8 @@ func (m Model) View() string {
 	if title, body, ok := m.workspace.Modal(); ok {
 		view = m.renderModal(view, lay, modalBox{Title: title, Body: body})
 	} else if m.export != nil {
-		view = m.renderModal(view, lay, modalBox{Title: "Export results", Body: m.export.view()})
-	} else if title, body, ok := m.favorites.Modal(); ok {
+		view = m.renderModal(view, lay, modalBox{Title: "Export results · " + m.sessionLabel(), Body: m.export.view()})
+	} else if title, body, ok := m.favoritesDialog(); ok {
 		view = m.renderModal(view, lay, modalBox{Title: title, Body: body})
 	} else if m.browser != nil {
 		view = m.renderModal(view, lay, modalBox{Title: m.browser.Title(), Body: m.browser.View()})
@@ -829,6 +829,23 @@ func (m Model) tabBar(width int) string {
 	}
 	parts = append(parts, m.theme.PaneTitle.Render("+"))
 	return truncate(strings.Join(parts, m.theme.Status.Render(" │ ")), width)
+}
+
+// sessionLabel is the tab name shown in per-session dialog titles.
+func (m Model) sessionLabel() string {
+	if s := m.activeSession(); s != nil {
+		return s.Title
+	}
+	return "untitled"
+}
+
+// favoritesDialog adds the active tab name to favorites overlays.
+func (m Model) favoritesDialog() (string, string, bool) {
+	title, body, ok := m.favorites.Modal()
+	if !ok {
+		return "", "", false
+	}
+	return title + " · " + m.sessionLabel(), body, true
 }
 
 func (m Model) statusLine(lay layout) string {

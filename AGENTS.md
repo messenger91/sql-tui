@@ -2,7 +2,7 @@
 
 ## Current state
 
-Completed: §0–§9 — bootstrap, `internal/db` (SQLite, MySQL, and Postgres: connect, execute, schema), root TUI shell, workspace pane, query editor, table/CSV/JSON result views, view toggle, and export to file or clipboard. **M3, M4, and M5 are complete; §10 is complete; §11.1–§11.3 are complete.** Next: §11.4 favorites/export/view-toggle integration hardening. `TODO.md` is authoritative for what is implemented.
+Completed: §0–§9 — bootstrap, `internal/db` (SQLite, MySQL, and Postgres: connect, execute, schema), root TUI shell, workspace pane, query editor, table/CSV/JSON result views, view toggle, and export to file or clipboard. **M3, M4, and M5 are complete; §10 is complete; §11.1–§11.4 are complete.** Next: §11.5 runner/session test hardening (`goleak`, stress). `TODO.md` is authoritative for what is implemented.
 
 ## Source of truth
 
@@ -52,6 +52,8 @@ These are easy to violate when writing the first implementation:
 
 ## Async runner gotchas
 
+- Favorites, export, and `v` all read the **active session**; favorites dialog titles get ` · <tab title>` via `favoritesDialog()`, export uses `Export results · <tab title>`.
+- Export is refused while the active session is running (`wait for the query to finish` notice) instead of opening a dialog with partial data.
 - `main` must call `model.SetSender(program.Send)` **before** `program.Run()`; the sender holder is a pointer shared with the program's model copy.
 - Each run spawns exactly two goroutines (runner + `Program.Send` forwarder) counted by `runnerGroup`. Shutdown clears the sender **before** cancelling/waiting so a forwarder can never block inside `Send` after the event loop stops.
 - Batch/started events select on `ctx.Done()`; terminal events (`done`/`error`/`cancelled`) are sent unconditionally so the UI reliably learns the outcome.

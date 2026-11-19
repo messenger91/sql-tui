@@ -270,8 +270,8 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 - [x] **Backpressure**: bounded channel (e.g., cap 8 batches); if the UI is slow, the runner blocks on send — acceptable, but ensure `ctx.Done()` is selected while blocked. (Batch/started sends select on `ctx.Done()`; terminal events are delivered unconditionally so cancellation is observable.)
 
 ### 11.4 Favorites/export/view-toggle integration
-- [ ] Favorites, export, and `v` view toggle operate on the **focused session**; dialog titles include the session/tab name.
-- [ ] Exporting a still-streaming session is disabled with a tooltip: `wait for query to finish`.
+- [x] Favorites, export, and `v` view toggle operate on the **focused session**; dialog titles include the session/tab name.
+- [x] Exporting a still-streaming session is disabled with a tooltip: `wait for query to finish`. (Footer notice `wait for the query to finish`; the export dialog does not open.)
 
 ### 11.5 Tests
 - [ ] Session manager unit tests: create/close/switch, title derivation, running-tab close confirmation.
