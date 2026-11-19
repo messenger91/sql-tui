@@ -294,11 +294,11 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 - [x] Surface editability in the status line: `Editable · PK: id` vs `Read-only (no PK)` vs `Read-only (complex query)`. (Rendered as `editable: PK id` or `read-only (<reason>)`.)
 
 ### 12.2 Cell editing UX
-- [ ] In the table view, `e`/`enter` on the focused cell opens a `textinput` editor overlay pre-filled with the current value; `ctrl+n` toggles `NULL` (only if the column is nullable).
-- [ ] Type-aware validation using `ColumnMeta.Type`: integers, numerics, booleans (`t/f/true/false/1/0`), timestamps (ISO-8601 parse with clear error), text (as-is).
-- [ ] Visual diff state: edited cells rendered with a yellow background; `NULL` rendered dim.
-- [ ] `esc` cancels the cell edit; `ctrl+z` on a row reverts all pending edits for that row; `ctrl+shift+z` reverts all pending edits in the result.
-- [ ] Row-level actions (menu via `m`): `Set cell to NULL`, `Duplicate row` (INSERT), `Delete row` (DELETE) — each becomes a pending change, not an immediate DB write.
+- [x] In the table view, `e`/`enter` on the focused cell opens a `textinput` editor overlay pre-filled with the current value; `ctrl+n` toggles `NULL` (only if the column is nullable). (Cell cursor moves with `←/→`; row with `↑/↓`.)
+- [x] Type-aware validation using `ColumnMeta.Type`: integers, numerics, booleans (`t/f/true/false/1/0`), timestamps (ISO-8601 parse with clear error), text (as-is).
+- [ ] Visual diff state: edited cells rendered with a yellow background; `NULL` rendered dim. (Approved deviation: `bubbles/table` cannot style cells, so pending rows get a leading `* ` marker and the status shows `N pending`; the preview list arrives in §12.3.)
+- [x] `esc` cancels the cell edit; `ctrl+z` on a row reverts all pending edits for that row; `ctrl+shift+z` reverts all pending edits in the result.
+- [x] Row-level actions (menu via `m`): `Set cell to NULL`, `Duplicate row` (INSERT), `Delete row` (DELETE) — each becomes a pending change, not an immediate DB write.
 
 ### 12.3 DML generation
 - [ ] `internal/result/dml.go`: build `Statement{SQL, Args []any}` from pending changes:

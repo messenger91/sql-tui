@@ -16,7 +16,7 @@ func editabilityTables() []db.TableMeta {
 		Schema: "main", Name: "users", Kind: db.TableKindTable,
 		Columns: []db.ColumnMeta{
 			{Name: "id", Type: "INTEGER", IsPrimaryKey: true, Ordinal: 0},
-			{Name: "email", Type: "TEXT", Ordinal: 1},
+			{Name: "email", Type: "TEXT", Nullable: true, Ordinal: 1},
 		},
 	}}
 }

@@ -29,7 +29,7 @@ type form struct {
 	name   textinput.Model
 	dsn    textinput.Model
 	driver db.Driver
-	focus  int // 0 name, 1 driver, 2 dsn
+	focus  int // 0 name, 1 driver, 2 dsn, 3 access
 	err    string
 	width  int
 }
@@ -115,11 +115,11 @@ func (f *form) cycleDriver(delta int) {
 func (f *form) update(msg tea.KeyMsg) bool {
 	switch msg.String() {
 	case "tab":
-		f.focus = (f.focus + 1) % 3
+		f.focus = (f.focus + 1) % 4
 		f.syncFocus()
 		return false
 	case "shift+tab":
-		f.focus = (f.focus + 2) % 3
+		f.focus = (f.focus + 3) % 4
 		f.syncFocus()
 		return false
 	}
@@ -130,6 +130,16 @@ func (f *form) update(msg tea.KeyMsg) bool {
 			f.cycleDriver(-1)
 		case key.Matches(msg, key.NewBinding(key.WithKeys("right", "l"))):
 			f.cycleDriver(1)
+		case msg.Type == tea.KeyEnter:
+			return true
+		}
+		return false
+	}
+
+	if f.focus == 3 {
+		switch {
+		case key.Matches(msg, key.NewBinding(key.WithKeys("left", "right", "h", "l", " "))):
+			f.readOnly = !f.readOnly
 		case msg.Type == tea.KeyEnter:
 			return true
 		}
@@ -199,6 +209,15 @@ func (f *form) view(width int) string {
 	b.WriteString(label.Render("DSN"))
 	b.WriteString("\n")
 	b.WriteString(f.dsn.View())
+	b.WriteString("\n\n")
+	b.WriteString(label.Render("Access"))
+	b.WriteString("\n◀ ")
+	if f.readOnly {
+		b.WriteString("read-only")
+	} else {
+		b.WriteString("writable")
+	}
+	b.WriteString(" ▶")
 
 	placeholder, hint := driverHint(f.driver)
 	_ = placeholder
@@ -210,6 +229,6 @@ func (f *form) view(width int) string {
 		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render(f.err))
 	}
 	b.WriteString("\n\n")
-	b.WriteString(lipgloss.NewStyle().Faint(true).Render("tab next field · ←/→ driver · enter connect · esc cancel"))
+	b.WriteString(lipgloss.NewStyle().Faint(true).Render("tab next field · ←/→ change · enter connect · esc cancel"))
 	return b.String()
 }

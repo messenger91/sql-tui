@@ -2,7 +2,7 @@
 
 ## Current state
 
-Completed: §0–§9 — bootstrap, `internal/db` (SQLite, MySQL, and Postgres: connect, execute, schema), root TUI shell, workspace pane, query editor, table/CSV/JSON result views, view toggle, and export to file or clipboard. **M3, M4, and M5 are complete; §10 and §11 are complete; §12.1 is complete.** Next: §12.2 cell editing UX. `TODO.md` is authoritative for what is implemented.
+Completed: §0–§9 — bootstrap, `internal/db` (SQLite, MySQL, and Postgres: connect, execute, schema), root TUI shell, workspace pane, query editor, table/CSV/JSON result views, view toggle, and export to file or clipboard. **M3, M4, and M5 are complete; §10 and §11 are complete; §12.1–§12.2 are complete.** Next: §12.3 DML generation + preview. `TODO.md` is authoritative for what is implemented.
 
 ## Source of truth
 
@@ -50,6 +50,16 @@ These are easy to violate when writing the first implementation:
 - Activation is message-based: workspace emits `ActivatedMsg`; the root model focuses the query pane, calls `workspace.ActivationSucceeded` (which also clears the `connecting…` spinner), and starts an async `db.LoadSchema`. Editing the active connection re-emits `ActivatedMsg` so the schema is reloaded. If a new activation message is ever added, clear `busy` there too or the spinner runs forever.
 - DSNs are masked in the list (`maskDSN`), but the form and the on-disk JSON keep them plaintext.
 - `main` must call `model.Close()` after `tea.NewProgram(...).Run()`; the manager is a pointer inside a copied model, so closing there releases all handles.
+
+## Cell editing gotchas
+
+- Connections are **read-only by default**; the add/edit form has a fourth `Access` field (tab to it, `←/→` toggles writable). Writable is required for §12 eligibility.
+- Pending edits live on `Session.Pending` (row index → column → `CellEdit` + row ops). `App.syncPending` copies row markers/count into the active session's `result.Model`; call it after every mutation.
+- Result cell selection is a separate column cursor (`cellCol`, moved with `←/→`/`h`/`l`); rows still use the table cursor. The table cannot color cells, so pending rows are prefixed with `* ` and the status shows `N pending`.
+- `e`/`enter` opens the cell editor only in the table view for editable results; read-only results show a `result is read-only` notice.
+- Validation lives in `session.ParseCellValue`; NULL is set with `ctrl+n` (nullable columns only). `esc` cancels; `ctrl+z` reverts the selected row; `ctrl+shift+z` reverts all (terminal support for that chord varies).
+- A new query clears pending edits and resets editability.
+- After streaming, the table cursor is at the last row (bottom-following); tests must read `SelectedCell()` instead of assuming row 0.
 
 ## Inline editing gotchas
 

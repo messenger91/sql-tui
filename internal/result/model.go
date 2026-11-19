@@ -38,6 +38,10 @@ type Model struct {
 	has       bool
 	streaming bool
 
+	cellCol      int
+	pendingRows  map[int]bool
+	pendingCount int
+
 	format Format
 	width  int
 	height int
@@ -66,6 +70,40 @@ func New() Model {
 	}
 }
 
+// SetPending updates the row markers and pending count.
+func (m *Model) SetPending(rows map[int]bool, count int) {
+	m.pendingRows = make(map[int]bool, len(rows))
+	for row := range rows {
+		m.pendingRows[row] = true
+	}
+	m.pendingCount = count
+	m.rebuild()
+}
+
+// SelectedCell returns the focused cell (row index, column name, raw value).
+func (m Model) SelectedCell() (int, string, any, bool) {
+	if !m.has || len(m.result.Columns) == 0 {
+		return 0, "", nil, false
+	}
+	row := m.table.Cursor()
+	if row < 0 || row >= len(m.result.Rows) {
+		return 0, "", nil, false
+	}
+	column := min(max(m.cellCol, 0), len(m.result.Columns)-1)
+	var value any
+	if column < len(m.result.Rows[row]) {
+		value = m.result.Rows[row][column]
+	}
+	return row, m.result.Columns[column], value, true
+}
+
+func (m *Model) moveCell(delta int) {
+	if len(m.result.Columns) == 0 {
+		return
+	}
+	m.cellCol = min(max(m.cellCol+delta, 0), len(m.result.Columns)-1)
+}
+
 // SetSize updates the available content area (excluding pane border/title).
 func (m *Model) SetSize(width, height int) {
 	m.width = max(width, 4)
@@ -87,6 +125,9 @@ func (m *Model) Blur() { m.table.Blur() }
 func (m *Model) SetResult(result db.QueryResult) {
 	m.result = result
 	m.has = true
+	m.cellCol = 0
+	m.pendingRows = make(map[int]bool)
+	m.pendingCount = 0
 	m.rebuild()
 	// Set the cursor after rows exist: table clamps the cursor against the
 	// current row count, so doing this before rebuild leaves it at -1.
@@ -161,6 +202,16 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case FormatCSV, FormatJSON:
 		m.viewport, cmd = m.viewport.Update(msg)
 	default:
+		if key, ok := msg.(tea.KeyMsg); ok {
+			switch key.String() {
+			case "left", "h":
+				m.moveCell(-1)
+				return m, nil
+			case "right", "l":
+				m.moveCell(1)
+				return m, nil
+			}
+		}
 		m.table, cmd = m.table.Update(msg)
 	}
 	return m, cmd
@@ -202,6 +253,9 @@ func (m Model) summary() string {
 		m.result.RowCount, rows, export.FormatElapsed(m.result.Elapsed), m.format)
 	if m.result.Truncated {
 		line += " · truncated"
+	}
+	if m.pendingCount > 0 {
+		line += fmt.Sprintf(" · %d pending", m.pendingCount)
 	}
 	return line
 }
@@ -247,6 +301,11 @@ func (m *Model) rebuildTable() {
 		natural[i] = ansi.StringWidth(name)
 	}
 	rows := export.ValueRows(m.result)
+	for i := range rows {
+		if m.pendingRows[i] && len(rows[i]) > 0 {
+			rows[i][0] = "* " + rows[i][0]
+		}
+	}
 	for _, row := range rows {
 		for i, cell := range row {
 			if width := ansi.StringWidth(cell); width > natural[i] {

@@ -295,7 +295,6 @@ func (m Model) submitForm() (Model, tea.Cmd) {
 	wasActive := false
 	if form.mode == formAdd {
 		connection.ID = newID()
-		connection.ReadOnly = true
 		next = append(next, connection)
 	} else {
 		reconnectID = connection.ID

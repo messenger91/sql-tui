@@ -69,12 +69,32 @@ func TestFormTabMovesFocus(t *testing.T) {
 		t.Fatalf("focus after second tab = %d", form.focus)
 	}
 	form.update(tea.KeyMsg{Type: tea.KeyTab})
+	if form.focus != 3 {
+		t.Fatalf("focus after third tab = %d", form.focus)
+	}
+	form.update(tea.KeyMsg{Type: tea.KeyTab})
 	if form.focus != 0 {
 		t.Fatalf("focus did not wrap: %d", form.focus)
 	}
 	form.update(tea.KeyMsg{Type: tea.KeyShiftTab})
-	if form.focus != 2 {
+	if form.focus != 3 {
 		t.Fatalf("shift+tab focus = %d", form.focus)
+	}
+}
+
+func TestFormAccessToggle(t *testing.T) {
+	form := newForm(formAdd)
+	if !form.readOnly {
+		t.Fatal("new connections must default to read-only")
+	}
+	form.focus = 3
+	form.update(tea.KeyMsg{Type: tea.KeyRight})
+	if form.readOnly {
+		t.Fatal("access toggle did not switch to writable")
+	}
+	form.update(tea.KeyMsg{Type: tea.KeyLeft})
+	if !form.readOnly {
+		t.Fatal("access toggle did not switch back to read-only")
 	}
 }
 

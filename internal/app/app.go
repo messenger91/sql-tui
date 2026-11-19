@@ -19,6 +19,7 @@ import (
 	"github.com/messenger91/sql-tui/internal/export"
 	"github.com/messenger91/sql-tui/internal/favorites"
 	"github.com/messenger91/sql-tui/internal/query"
+	"github.com/messenger91/sql-tui/internal/result"
 	"github.com/messenger91/sql-tui/internal/schema"
 	"github.com/messenger91/sql-tui/internal/session"
 	"github.com/messenger91/sql-tui/internal/styles"
@@ -64,6 +65,8 @@ type Model struct {
 	modal         *modalBox
 	export        *exportDialog
 	browser       *schemaBrowser
+	cellEdit      *cellEditor
+	rowMenu       *rowMenu
 	notice        string
 	noticeSeq     int
 
@@ -329,6 +332,8 @@ func (m Model) startQuery(sql string) (tea.Model, tea.Cmd) {
 	s.Title = session.DeriveTitle(sql)
 	s.LastSQL = sql
 	s.Editability = session.Editability{}
+	s.ResetPending()
+	m.syncPending(s)
 	s.MarkRunning(cancel)
 	s.Editor.MarkRunning()
 	m.cancelRequested = false
@@ -458,6 +463,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.confirmClose = ""
 		}
 		return m, nil
+	}
+	if m.cellEdit != nil {
+		return m.handleCellEditorKey(msg)
+	}
+	if m.rowMenu != nil {
+		return m.handleRowMenuKey(msg)
 	}
 	// The autocomplete popup owns tab (accept), runes (continue typing), and
 	// must not let global bindings swallow them.
@@ -592,6 +603,39 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.export = newExportDialog()
 		return m, nil
+	}
+	if m.focus == FocusResult {
+		s := m.activeSession()
+		if s != nil && s.Results.Format() == result.FormatTable {
+			if s.Editability.Editable {
+				switch msg.String() {
+				case "e", "enter":
+					if m.beginCellEdit(s) {
+						return m, nil
+					}
+				case "m":
+					if row, _, _, ok := s.Results.SelectedCell(); ok {
+						m.rowMenu = &rowMenu{row: row}
+						return m, nil
+					}
+				case "ctrl+z":
+					if row, _, _, ok := s.Results.SelectedCell(); ok {
+						s.Pending.RevertRow(row)
+						m.syncPending(s)
+					}
+					return m, nil
+				case "ctrl+shift+z":
+					s.Pending.RevertAll()
+					m.syncPending(s)
+					return m, nil
+				}
+			} else if msg.String() == "e" {
+				if _, _, _, ok := s.Results.SelectedCell(); ok {
+					cmd := m.setNotice("result is read-only")
+					return m, cmd
+				}
+			}
+		}
 	}
 	if m.focus == FocusWorkspace {
 		var cmd tea.Cmd
@@ -834,6 +878,11 @@ func (m Model) View() string {
 			Title: "Close tab",
 			Body:  "The query in this tab is running.\n\ny close · n cancel",
 		})
+	} else if m.cellEdit != nil {
+		title := fmt.Sprintf("Edit cell · %s (row %d)", m.cellEdit.column, m.cellEdit.row+1)
+		view = m.renderModal(view, lay, modalBox{Title: title, Body: m.cellEdit.view()})
+	} else if m.rowMenu != nil {
+		view = m.renderModal(view, lay, modalBox{Title: "Row actions", Body: m.rowMenu.view()})
 	} else if m.modal != nil {
 		view = m.renderModal(view, lay, *m.modal)
 	}
@@ -904,6 +953,9 @@ func (m Model) statusLine(lay layout) string {
 			switch {
 			case s.Editability.Editable:
 				line += " · editable: PK " + strings.Join(s.Editability.PrimaryKey, ", ")
+				if row, column, _, ok := s.Results.SelectedCell(); ok {
+					line += fmt.Sprintf(" · cell: %s (row %d)", column, row+1)
+				}
 			case s.Editability.Reason != "":
 				line += " · read-only (" + s.Editability.Reason + ")"
 			}

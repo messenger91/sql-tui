@@ -142,6 +142,52 @@ func TestRowNavigation(t *testing.T) {
 	}
 }
 
+func TestSelectedCellNavigation(t *testing.T) {
+	m := New()
+	m.SetSize(40, 8)
+	m.SetResult(sampleResult())
+	m.Focus()
+
+	row, column, value, ok := m.SelectedCell()
+	if !ok || row != 0 || column != "id" || value != int64(1) {
+		t.Fatalf("cell = %d %q %#v", row, column, value)
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	row, column, value, ok = m.SelectedCell()
+	if !ok || column != "name" || value != "ada" {
+		t.Fatalf("cell = %d %q %#v", row, column, value)
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	row, column, value, ok = m.SelectedCell()
+	if !ok || row != 1 || column != "name" || value != nil {
+		t.Fatalf("cell = %d %q %#v", row, column, value)
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	if _, column, _, _ = m.SelectedCell(); column != "id" {
+		t.Fatalf("column = %q", column)
+	}
+	// Left must not wrap or go negative.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	if _, column, _, _ = m.SelectedCell(); column != "id" {
+		t.Fatalf("column = %q", column)
+	}
+}
+
+func TestPendingMarkersAndStatus(t *testing.T) {
+	m := New()
+	m.SetSize(60, 10)
+	m.SetResult(sampleResult())
+	m.SetPending(map[int]bool{1: true}, 2)
+
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "* ") {
+		t.Fatalf("pending marker missing:\n%s", view)
+	}
+	if !strings.Contains(view, "2 pending") {
+		t.Fatalf("pending count missing:\n%s", view)
+	}
+}
+
 func TestTruncatedStatus(t *testing.T) {
 	res := sampleResult()
 	res.Truncated = true

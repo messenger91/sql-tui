@@ -42,6 +42,7 @@ type Session struct {
 	ReadOnly    bool
 	LastSQL     string
 	Editability Editability
+	Pending     *Pending
 
 	cancel context.CancelFunc
 }
@@ -56,7 +57,17 @@ func New(id ID, connectionID string) *Session {
 		Results:      result.New(),
 		State:        StateIdle,
 		ReadOnly:     true,
+		Pending:      NewPending(),
 	}
+}
+
+// ResetPending clears pending edits (for example before a fresh query run).
+func (s *Session) ResetPending() {
+	if s.Pending == nil {
+		s.Pending = NewPending()
+		return
+	}
+	s.Pending.RevertAll()
 }
 
 // SetSQL replaces the editor contents and updates the tab title.
