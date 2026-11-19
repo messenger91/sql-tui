@@ -378,3 +378,77 @@ func TestCycleFormatResetsScroll(t *testing.T) {
 		t.Fatalf("table cursor = %d after switch", m.table.Cursor())
 	}
 }
+
+func TestHideColumn(t *testing.T) {
+	m := New()
+	m.SetSize(60, 10)
+	m.SetResult(sampleResult())
+	m.Focus()
+
+	m.ToggleColumnHidden()
+	columns := m.table.Columns()
+	if len(columns) != 1 || columns[0].Title != "name" {
+		t.Fatalf("columns = %+v", columns)
+	}
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "name") {
+		t.Fatalf("visible column missing:\n%s", view)
+	}
+	if !strings.Contains(view, "1 hidden") {
+		t.Fatalf("hidden count missing:\n%s", view)
+	}
+
+	// Cannot hide the last visible column.
+	m.ToggleColumnHidden()
+	if got := m.hiddenCount(); got != 1 {
+		t.Fatalf("hidden = %d, want 1", got)
+	}
+
+	m.ResetColumnLayout()
+	if got := m.hiddenCount(); got != 0 {
+		t.Fatalf("hidden = %d, want 0", got)
+	}
+}
+
+func TestResizeColumn(t *testing.T) {
+	m := New()
+	m.SetSize(80, 10)
+	m.SetResult(db.QueryResult{
+		Columns:  []string{"description"},
+		Rows:     [][]any{{"a fairly long description value"}},
+		RowCount: 1,
+	})
+
+	before := m.table.Columns()[0].Width
+	m.ResizeColumn(2)
+	if got := m.table.Columns()[0].Width; got != before+2 {
+		t.Fatalf("width = %d, want %d", got, before+2)
+	}
+	m.ResizeColumn(-4)
+	if got := m.table.Columns()[0].Width; got >= before+2 {
+		t.Fatalf("width did not shrink: %d", got)
+	}
+	m.ResetColumnLayout()
+	if got := m.table.Columns()[0].Width; got != before {
+		t.Fatalf("reset width = %d, want %d", got, before)
+	}
+}
+
+func TestColumnLayoutPersistsAcrossFormats(t *testing.T) {
+	m := New()
+	m.SetSize(60, 10)
+	m.SetResult(sampleResult())
+	m.ToggleColumnHidden()
+
+	m.SetFormat(FormatCSV)
+	m.SetFormat(FormatTable)
+	if got := m.hiddenCount(); got != 1 {
+		t.Fatalf("hidden after format switch = %d", got)
+	}
+
+	// A new result with the same column names keeps the layout.
+	m.SetResult(sampleResult())
+	if got := m.hiddenCount(); got != 1 {
+		t.Fatalf("hidden after new result = %d", got)
+	}
+}

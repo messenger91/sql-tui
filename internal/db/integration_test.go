@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -159,6 +160,21 @@ func runSchemaIntegration(t *testing.T, driver Driver) {
 	}
 }
 
+func TestIntegrationExplain(t *testing.T) {
+	for _, driver := range []Driver{DriverMySQL, DriverPostgres} {
+		t.Run(string(driver), func(t *testing.T) {
+			handle := setupIntegration(t, driver)
+			plan, err := Explain(context.Background(), handle, driver, "SELECT * FROM sql_tui_parent", 0)
+			if err != nil {
+				t.Fatalf("Explain: %v", err)
+			}
+			if strings.TrimSpace(plan) == "" {
+				t.Fatal("empty plan")
+			}
+		})
+	}
+}
+
 func TestMySQLSchemaAndQuery(t *testing.T) {
 	runSchemaIntegration(t, DriverMySQL)
 }
@@ -202,5 +218,33 @@ func integrationString(value any) string {
 		return string(typed)
 	default:
 		return fmt.Sprint(typed)
+	}
+}
+
+func TestIntegrationSchemaOption(t *testing.T) {
+	tests := []struct {
+		driver Driver
+		schema string
+		env    string
+		dsn    string
+	}{
+		{DriverMySQL, "sql_tui_test", "MYSQL_TEST_DSN", defaultMySQLDSN},
+		{DriverPostgres, "public", "POSTGRES_TEST_DSN", defaultPostgresDSN},
+	}
+	for _, tc := range tests {
+		t.Run(string(tc.driver), func(t *testing.T) {
+			handle, err := Connect(context.Background(), Connection{
+				ID:     "schema-option",
+				Driver: tc.driver,
+				DSN:    integrationDSN(tc.env, tc.dsn),
+				Options: map[string]string{
+					OptionSchema: tc.schema,
+				},
+			})
+			if err != nil {
+				t.Fatalf("Connect with schema option: %v", err)
+			}
+			_ = handle.Close()
+		})
 	}
 }

@@ -2,6 +2,7 @@ package app
 
 import (
 	"regexp"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -26,6 +27,22 @@ func TestExportDialogFormatChangesExtension(t *testing.T) {
 	dialog.setFormat("json")
 	if got := dialog.path.Value(); got != base[:len(base)-4]+".json" {
 		t.Fatalf("path = %q", got)
+	}
+}
+
+func TestExportDialogCyclesFormats(t *testing.T) {
+	dialog := newExportDialog()
+	dialog.update(tea.KeyMsg{Type: tea.KeyRight})
+	if dialog.format != "json" || !strings.HasSuffix(dialog.path.Value(), ".json") {
+		t.Fatalf("format = %q path = %q", dialog.format, dialog.path.Value())
+	}
+	dialog.update(tea.KeyMsg{Type: tea.KeyRight})
+	if dialog.format != "markdown" || !strings.HasSuffix(dialog.path.Value(), ".markdown") {
+		t.Fatalf("format = %q path = %q", dialog.format, dialog.path.Value())
+	}
+	dialog.update(tea.KeyMsg{Type: tea.KeyRight})
+	if dialog.format != "csv" || !strings.HasSuffix(dialog.path.Value(), ".csv") {
+		t.Fatalf("format = %q path = %q", dialog.format, dialog.path.Value())
 	}
 }
 

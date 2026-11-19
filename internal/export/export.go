@@ -36,6 +36,8 @@ func Serialize(format string, result db.QueryResult) (string, error) {
 		return CSVString(result)
 	case "json":
 		return JSONString(result)
+	case "markdown", "md":
+		return MarkdownString(result), nil
 	default:
 		return "", fmt.Errorf("export: unknown format %q", format)
 	}
@@ -74,6 +76,8 @@ func writeTo(file *os.File, format string, result db.QueryResult) error {
 		return WriteCSV(file, result)
 	case "json":
 		return WriteJSON(file, result)
+	case "markdown", "md":
+		return WriteMarkdown(file, result)
 	default:
 		return fmt.Errorf("export: unknown format %q", format)
 	}

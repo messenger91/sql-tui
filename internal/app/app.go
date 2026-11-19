@@ -247,6 +247,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case applyDoneMsg:
 		return m.handleApplyDone(msg)
+	case explainDoneMsg:
+		if msg.Err != nil {
+			m.openModal("Explain failed", msg.Err.Error())
+			return m, nil
+		}
+		body := msg.Plan
+		if strings.TrimSpace(body) == "" {
+			body = "the database returned an empty plan"
+		}
+		m.openModal("Query plan · "+msg.Title, body)
+		return m, nil
 	case statusTimeoutMsg:
 		if msg.Seq == m.noticeSeq {
 			m.notice = ""
@@ -620,6 +631,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.BrowseFav) && m.focus == FocusQuery:
 		m.favorites.OpenBrowse()
 		return m, nil
+	case key.Matches(msg, m.keys.Explain) && m.focus == FocusQuery:
+		return m.startExplain()
 	case key.Matches(msg, m.keys.BrowseSchema):
 		if m.active == nil {
 			cmd := m.setNotice("select a connection first")

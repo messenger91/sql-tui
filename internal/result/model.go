@@ -41,6 +41,8 @@ type Model struct {
 	cellCol      int
 	pendingRows  map[int]bool
 	pendingCount int
+	hidden       map[string]bool
+	widthDelta   map[string]int
 
 	format Format
 	width  int
@@ -62,11 +64,13 @@ func New() Model {
 	vp := viewport.New(80, 8)
 
 	return Model{
-		table:    t,
-		viewport: vp,
-		format:   FormatTable,
-		width:    80,
-		height:   10,
+		table:      t,
+		viewport:   vp,
+		format:     FormatTable,
+		width:      80,
+		height:     10,
+		hidden:     make(map[string]bool),
+		widthDelta: make(map[string]int),
 	}
 }
 
@@ -82,14 +86,16 @@ func (m *Model) SetPending(rows map[int]bool, count int) {
 
 // SelectedCell returns the focused cell (row index, column name, raw value).
 func (m Model) SelectedCell() (int, string, any, bool) {
-	if !m.has || len(m.result.Columns) == 0 {
+	visible := m.visibleColumns()
+	if !m.has || len(visible) == 0 {
 		return 0, "", nil, false
 	}
 	row := m.table.Cursor()
 	if row < 0 || row >= len(m.result.Rows) {
 		return 0, "", nil, false
 	}
-	column := min(max(m.cellCol, 0), len(m.result.Columns)-1)
+	position := min(max(m.cellCol, 0), len(visible)-1)
+	column := visible[position]
 	var value any
 	if column < len(m.result.Rows[row]) {
 		value = m.result.Rows[row][column]
@@ -97,11 +103,58 @@ func (m Model) SelectedCell() (int, string, any, bool) {
 	return row, m.result.Columns[column], value, true
 }
 
+// visibleColumns returns the original indexes of columns not hidden.
+func (m Model) visibleColumns() []int {
+	visible := make([]int, 0, len(m.result.Columns))
+	for i, name := range m.result.Columns {
+		if m.hidden[strings.ToLower(name)] {
+			continue
+		}
+		visible = append(visible, i)
+	}
+	return visible
+}
+
 func (m *Model) moveCell(delta int) {
-	if len(m.result.Columns) == 0 {
+	visible := m.visibleColumns()
+	if len(visible) == 0 {
 		return
 	}
-	m.cellCol = min(max(m.cellCol+delta, 0), len(m.result.Columns)-1)
+	m.cellCol = min(max(m.cellCol+delta, 0), len(visible)-1)
+}
+
+// ToggleColumnHidden hides or shows the selected column.
+func (m *Model) ToggleColumnHidden() {
+	_, name, _, ok := m.SelectedCell()
+	if !ok {
+		return
+	}
+	key := strings.ToLower(name)
+	visible := m.visibleColumns()
+	if !m.hidden[key] && len(visible) <= 1 {
+		return
+	}
+	m.hidden[key] = !m.hidden[key]
+	m.cellCol = min(m.cellCol, max(len(m.visibleColumns())-1, 0))
+	m.rebuild()
+}
+
+// ResizeColumn widens/narrows the selected column by delta cells.
+func (m *Model) ResizeColumn(delta int) {
+	_, name, _, ok := m.SelectedCell()
+	if !ok {
+		return
+	}
+	key := strings.ToLower(name)
+	m.widthDelta[key] = min(max(m.widthDelta[key]+delta, -20), 40)
+	m.rebuild()
+}
+
+// ResetColumnLayout clears hidden columns and width overrides.
+func (m *Model) ResetColumnLayout() {
+	m.hidden = make(map[string]bool)
+	m.widthDelta = make(map[string]int)
+	m.rebuild()
 }
 
 // SetSize updates the available content area (excluding pane border/title).
@@ -208,6 +261,18 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			case "right", "l":
 				m.moveCell(1)
 				return m, nil
+			case "H":
+				m.ToggleColumnHidden()
+				return m, nil
+			case "]":
+				m.ResizeColumn(2)
+				return m, nil
+			case "[":
+				m.ResizeColumn(-2)
+				return m, nil
+			case "0":
+				m.ResetColumnLayout()
+				return m, nil
 			}
 		}
 		m.table, cmd = m.table.Update(msg)
@@ -255,6 +320,9 @@ func (m Model) summary() string {
 	if m.pendingCount > 0 {
 		line += fmt.Sprintf(" · %d pending", m.pendingCount)
 	}
+	if hidden := m.hiddenCount(); hidden > 0 {
+		line += fmt.Sprintf(" · %d hidden", hidden)
+	}
 	return line
 }
 
@@ -293,36 +361,68 @@ func (m *Model) rebuild() {
 }
 
 func (m *Model) rebuildTable() {
-	columns := make([]table.Column, len(m.result.Columns))
-	natural := make([]int, len(m.result.Columns))
-	for i, name := range m.result.Columns {
-		natural[i] = ansi.StringWidth(name)
+	visible := m.visibleColumns()
+	if len(visible) == 0 {
+		return
 	}
+	columns := make([]table.Column, len(visible))
+	natural := make([]int, len(visible))
+	for position, index := range visible {
+		natural[position] = ansi.StringWidth(m.result.Columns[index])
+	}
+
 	rows := export.ValueRows(m.result)
-	for i := range rows {
-		if m.pendingRows[i] && len(rows[i]) > 0 {
-			rows[i][0] = "* " + rows[i][0]
+	tableRows := make([]table.Row, 0, len(rows))
+	for rowIndex, row := range rows {
+		filtered := make([]string, 0, len(visible))
+		for _, index := range visible {
+			if index < len(row) {
+				filtered = append(filtered, row[index])
+			} else {
+				filtered = append(filtered, "")
+			}
 		}
-	}
-	for _, row := range rows {
-		for i, cell := range row {
+		if m.pendingRows[rowIndex] && len(filtered) > 0 {
+			filtered[0] = "* " + filtered[0]
+		}
+		for i, cell := range filtered {
 			if width := ansi.StringWidth(cell); width > natural[i] {
 				natural[i] = width
 			}
 		}
+		tableRows = append(tableRows, table.Row(filtered))
 	}
-	tableRows := make([]table.Row, len(rows))
-	for i, row := range rows {
-		tableRows[i] = table.Row(row)
+	for position, index := range visible {
+		delta := m.widthDelta[strings.ToLower(m.result.Columns[index])]
+		natural[position] = max(natural[position], minColumnWidth) + delta
 	}
+
 	widths := fitWidths(natural, m.width)
-	for i, name := range m.result.Columns {
-		columns[i] = table.Column{Title: name, Width: widths[i]}
+	for position, index := range visible {
+		columns[position] = table.Column{Title: m.result.Columns[index], Width: widths[position]}
 	}
+	// Reset rows first: table.SetColumns/SetRows re-render against the
+	// previous shape and would panic when the visible column count changes.
+	cursor := m.table.Cursor()
+	m.table.SetRows(nil)
 	m.table.SetColumns(columns)
 	m.table.SetRows(tableRows)
+	if len(tableRows) > 0 {
+		m.table.SetCursor(min(max(cursor, 0), len(tableRows)-1))
+	}
 	m.table.SetWidth(m.width)
 	m.table.SetHeight(max(m.height-2, 1))
+	m.cellCol = min(m.cellCol, len(visible)-1)
+}
+
+func (m Model) hiddenCount() int {
+	count := 0
+	for _, name := range m.result.Columns {
+		if m.hidden[strings.ToLower(name)] {
+			count++
+		}
+	}
+	return count
 }
 
 // fitWidths caps natural widths so the rendered table (cells plus 1-column

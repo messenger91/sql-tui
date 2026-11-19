@@ -86,11 +86,7 @@ func (d *exportDialog) update(msg tea.KeyMsg) bool {
 	switch d.focus {
 	case 0:
 		if toggleKey(msg) {
-			if d.format == "csv" {
-				d.setFormat("json")
-			} else {
-				d.setFormat("csv")
-			}
+			d.setFormat(nextExportFormat(d.format))
 		}
 	case 1:
 		if toggleKey(msg) {
@@ -112,6 +108,17 @@ func (d *exportDialog) update(msg tea.KeyMsg) bool {
 		}
 	}
 	return false
+}
+
+func nextExportFormat(format string) string {
+	switch format {
+	case "csv":
+		return "json"
+	case "json":
+		return "markdown"
+	default:
+		return "csv"
+	}
 }
 
 func toggleKey(msg tea.KeyMsg) bool {
