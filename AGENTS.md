@@ -2,7 +2,7 @@
 
 ## Current state
 
-Completed: §0–§9 — bootstrap, `internal/db` (SQLite, MySQL, and Postgres: connect, execute, schema), root TUI shell, workspace pane, query editor, table/CSV/JSON result views, view toggle, and export to file or clipboard. **M3, M4, and M5 are complete; §10 and §11 are complete; §12.1–§12.3 are complete.** Next: §12.4 transactional apply. `TODO.md` is authoritative for what is implemented.
+Completed: §0–§9 — bootstrap, `internal/db` (SQLite, MySQL, and Postgres: connect, execute, schema), root TUI shell, workspace pane, query editor, table/CSV/JSON result views, view toggle, and export to file or clipboard. **M3, M4, and M5 are complete; §10 and §11 are complete; §12.1–§12.4 are complete.** Next: §12.5 inline-editing tests, then M9 polish. `TODO.md` is authoritative for what is implemented.
 
 ## Source of truth
 
@@ -56,7 +56,11 @@ These are easy to violate when writing the first implementation:
 - `session.Changes()` is the bridge from `Pending` to `result.Change`; it requires editable state, the loaded result, and `Session.Driver` (copied from the connection like `ReadOnly`).
 - Row order drives statement order; delete rows take precedence over cell edits, duplicates include every result column with pending edits overlaid, and no-op edits are skipped.
 - `result.BuildStatements` never interpolates values; identifiers go through `db.Dialect.QuoteIdent`. MySQL booleans become `1/0`; time/bytes pass through to `database/sql`.
-- The `p` preview lists SQL + args and is gated on pending changes and the table view. `enter` currently reports that transactional apply arrives in §12.4 — replace that stub, do not add a second apply path.
+- The `p` preview lists SQL + args and is gated on pending changes and the table view. `enter` runs `startApply`; there is no other apply path.
+- Apply snapshots the loaded row on the first edit (`snapshotRow`); `Session.ApplyPlan` re-reads rows inside the transaction and aborts with `ErrRowChanged` on drift. Pending edits survive apply failures and conflicts.
+- `UPDATE`/`DELETE` must affect exactly one row; otherwise the transaction rolls back with `ErrRowsAffected`.
+- On success the app clears pending, reports `N statement(s) applied`, and re-runs the original query for the refreshed view (MVP; in-place cell refresh is still a TODO refinement).
+- Conflict modal instructs the user to close it and press `r` in the results pane; `r` clears pending and re-runs `Session.LastSQL`.
 - Do not build SQL strings anywhere else; extend `result/dml.go` instead.
 
 ## Cell editing gotchas

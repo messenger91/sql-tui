@@ -85,8 +85,10 @@ func (m Model) handlePreviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "enter":
 		m.preview = nil
-		cmd := m.setNotice("transactional apply arrives with §12.4")
-		return m, cmd
+		if s := m.activeSession(); s != nil {
+			return m.startApply(s)
+		}
+		return m, nil
 	}
 	return m, nil
 }

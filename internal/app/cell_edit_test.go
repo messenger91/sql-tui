@@ -228,18 +228,71 @@ func TestPreviewWithoutPending(t *testing.T) {
 	}
 }
 
-func TestPreviewEnterDefersApply(t *testing.T) {
+func TestApplyCommitsAndRefreshes(t *testing.T) {
 	m := editableWithRows(t, false)
-	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
-	m.cellEdit.input.SetValue("42")
-	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyEnter})
-	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	s := m.activeSession()
+	row, _, original, _ := s.Results.SelectedCell()
 
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	m.cellEdit.input.SetValue("99")
 	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyEnter})
-	if m.preview != nil {
-		t.Fatal("enter did not close the preview")
+	if s.Pending.Count() != 1 {
+		t.Fatalf("pending = %+v", s.Pending)
 	}
-	if !strings.Contains(m.notice, "§12.4") {
-		t.Fatalf("notice = %q", m.notice)
+
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	m, cmd := appUpdate(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("apply produced no command")
+	}
+	m, _ = appUpdate(t, m, cmd())
+	m.runners.wait()
+
+	if !s.Pending.Empty() {
+		t.Fatalf("pending not cleared: %+v", s.Pending)
+	}
+	handle, _ := m.manager.Get(s.ConnectionID)
+	var id int64
+	if err := handle.QueryRow(`SELECT id FROM users WHERE email = 'b'`).Scan(&id); err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if id != 99 {
+		t.Fatalf("id = %d (row %d, original %v)", id, row, original)
+	}
+}
+
+func TestApplyConflictRequiresRefresh(t *testing.T) {
+	m := editableWithRows(t, false)
+	s := m.activeSession()
+	_, _, pkValue, _ := s.Results.SelectedCell()
+
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	m.cellEdit.input.SetValue("99")
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	handle, _ := m.manager.Get(s.ConnectionID)
+	if _, err := handle.Exec(`UPDATE users SET email = 'outside' WHERE id = ?`, pkValue); err != nil {
+		t.Fatalf("external update: %v", err)
+	}
+
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	m, cmd := appUpdate(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = appUpdate(t, m, cmd())
+
+	if m.modal == nil || !strings.Contains(m.modal.Body, "Row changed") {
+		t.Fatalf("modal = %+v", m.modal)
+	}
+	if !m.needsRefresh {
+		t.Fatal("refresh flag not set")
+	}
+	if s.Pending.Empty() {
+		t.Fatal("pending edits were discarded")
+	}
+
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyEsc})
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	m.runners.wait()
+	if m.needsRefresh || !s.Pending.Empty() {
+		t.Fatalf("refresh did not reset state: flag=%v pending=%+v", m.needsRefresh, s.Pending)
 	}
 }

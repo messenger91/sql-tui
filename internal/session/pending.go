@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/messenger91/sql-tui/internal/db"
+	"github.com/messenger91/sql-tui/internal/result"
 )
 
 // RowOperation marks a whole-row pending change.
@@ -29,16 +30,28 @@ type CellEdit struct {
 
 // Pending holds uncommitted edits for one session, keyed by result row index.
 type Pending struct {
-	Cells map[int]map[string]CellEdit
-	Ops   map[int]RowOperation
+	Cells     map[int]map[string]CellEdit
+	Ops       map[int]RowOperation
+	Snapshots map[int][]result.ColumnValue
 }
 
 // NewPending returns an empty pending-edit set.
 func NewPending() *Pending {
 	return &Pending{
-		Cells: make(map[int]map[string]CellEdit),
-		Ops:   make(map[int]RowOperation),
+		Cells:     make(map[int]map[string]CellEdit),
+		Ops:       make(map[int]RowOperation),
+		Snapshots: make(map[int][]result.ColumnValue),
 	}
+}
+
+// EnsureSnapshot records the row as loaded before its first change, for
+// conflict detection during apply.
+func (p *Pending) EnsureSnapshot(row int, values []result.ColumnValue) {
+	if _, ok := p.Snapshots[row]; ok {
+		return
+	}
+	copied := append([]result.ColumnValue(nil), values...)
+	p.Snapshots[row] = copied
 }
 
 // SetCell records a pending edit.
@@ -109,12 +122,14 @@ func (p *Pending) Empty() bool { return p.Count() == 0 }
 func (p *Pending) RevertRow(row int) {
 	delete(p.Cells, row)
 	delete(p.Ops, row)
+	delete(p.Snapshots, row)
 }
 
 // RevertAll clears every pending change.
 func (p *Pending) RevertAll() {
 	p.Cells = make(map[int]map[string]CellEdit)
 	p.Ops = make(map[int]RowOperation)
+	p.Snapshots = make(map[int][]result.ColumnValue)
 }
 
 // ParseCellValue validates and converts text according to the column type.

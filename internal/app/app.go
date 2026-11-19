@@ -68,6 +68,7 @@ type Model struct {
 	cellEdit      *cellEditor
 	rowMenu       *rowMenu
 	preview       *previewState
+	needsRefresh  bool
 	notice        string
 	noticeSeq     int
 
@@ -219,6 +220,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		cmd := m.setNotice("Export complete: " + msg.Path)
 		return m, cmd
+	case applyDoneMsg:
+		return m.handleApplyDone(msg)
 	case statusTimeoutMsg:
 		if msg.Seq == m.noticeSeq {
 			m.notice = ""
@@ -518,6 +521,20 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if s := m.activeSession(); s != nil && s.Running() {
 			m.cancelSession(s)
 			cmd := m.setNotice("cancelling…")
+			return m, cmd
+		}
+	}
+	if m.focus == FocusResult {
+		s := m.activeSession()
+		if s != nil && m.needsRefresh && msg.String() == "r" {
+			s.Pending.RevertAll()
+			m.syncPending(s)
+			m.needsRefresh = false
+			if s.LastSQL != "" {
+				updated, cmd := m.startQuery(s.LastSQL)
+				return updated, cmd
+			}
+			cmd := m.setNotice("refreshed")
 			return m, cmd
 		}
 	}

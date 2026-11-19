@@ -27,6 +27,7 @@ type ColumnValue struct {
 type Change struct {
 	Kind   ChangeKind
 	Table  string
+	Row    int
 	Key    []ColumnValue // primary-key predicates
 	Set    []ColumnValue // updated/inserted columns
 	Values []ColumnValue // insert values

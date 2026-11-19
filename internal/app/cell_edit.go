@@ -10,6 +10,7 @@ import (
 
 	"github.com/messenger91/sql-tui/internal/db"
 	"github.com/messenger91/sql-tui/internal/export"
+	"github.com/messenger91/sql-tui/internal/result"
 	"github.com/messenger91/sql-tui/internal/session"
 )
 
@@ -150,6 +151,27 @@ func (m *Model) syncPending(s *session.Session) {
 	s.Results.SetPending(s.Pending.RowSet(), s.Pending.Count())
 }
 
+// snapshotRow records the loaded row before its first change (§12.4 conflict
+// detection).
+func (m *Model) snapshotRow(s *session.Session, row int) {
+	if s == nil || s.Pending == nil {
+		return
+	}
+	data, ok := s.Results.Result()
+	if !ok || row < 0 || row >= len(data.Rows) {
+		return
+	}
+	values := make([]result.ColumnValue, len(data.Columns))
+	for i, column := range data.Columns {
+		var value any
+		if i < len(data.Rows[row]) {
+			value = data.Rows[row][i]
+		}
+		values[i] = result.ColumnValue{Column: column, Value: value}
+	}
+	s.Pending.EnsureSnapshot(row, values)
+}
+
 func (m *Model) beginCellEdit(s *session.Session) bool {
 	row, column, value, ok := s.Results.SelectedCell()
 	if !ok {
@@ -174,6 +196,7 @@ func (m Model) handleCellEditorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if s := m.activeSession(); s != nil {
+			m.snapshotRow(s, m.cellEdit.row)
 			s.Pending.SetCell(m.cellEdit.row, m.cellEdit.column, edit)
 			m.syncPending(s)
 		}
@@ -204,6 +227,7 @@ func (m Model) handleRowMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.rowMenu.err = "column is not nullable"
 			return m, nil
 		}
+		m.snapshotRow(s, row)
 		s.Pending.SetCell(row, column, session.CellEdit{
 			Value:        nil,
 			IsNull:       true,
@@ -215,6 +239,7 @@ func (m Model) handleRowMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "d":
 		if s := m.activeSession(); s != nil {
+			m.snapshotRow(s, m.rowMenu.row)
 			s.Pending.SetRowOp(m.rowMenu.row, session.RowDuplicate)
 			m.syncPending(s)
 		}
@@ -222,6 +247,7 @@ func (m Model) handleRowMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "x":
 		if s := m.activeSession(); s != nil {
+			m.snapshotRow(s, m.rowMenu.row)
 			s.Pending.SetRowOp(m.rowMenu.row, session.RowDelete)
 			m.syncPending(s)
 		}

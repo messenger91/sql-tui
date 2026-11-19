@@ -312,12 +312,12 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 - [x] Always use placeholders — never string-interpolate user values into SQL (note this explicitly to prevent future regressions).
 
 ### 12.4 Transactional apply
-- [ ] Apply all pending changes for the focused session in one `db.BeginTx`:
-  - [ ] Execute statements in order; on any error → `Rollback`, show error dialog with the failing statement, keep pending changes so the user can fix and retry.
-  - [ ] On success → `Commit`; report `N statement(s) applied`.
-- [ ] **Conflict detection**: before generating the `UPDATE`/`DELETE`, re-query the row by PK (`SELECT <editable cols> FROM t WHERE pk = ?`) and compare the **old** values to the snapshot taken when the cell was first edited. On mismatch, abort with `Row changed since load — refresh required`; provide `r` to refresh the result (re-run the original query into the session, resetting pending edits after confirmation).
-- [ ] Affected-rows sanity check: each `UPDATE`/`DELETE` should report `RowsAffected == 1`; otherwise roll back and report (guards against a mis-detected PK).
-- [ ] After commit: refresh the affected cells from the DB in place (re-query by PK) rather than re-running the whole query, unless refresh fails → fall back to re-running.
+- [x] Apply all pending changes for the focused session in one `db.BeginTx`:
+  - [x] Execute statements in order; on any error → `Rollback`, show error dialog with the failing statement, keep pending changes so the user can fix and retry.
+  - [x] On success → `Commit`; report `N statement(s) applied`.
+- [x] **Conflict detection**: before generating the `UPDATE`/`DELETE`, re-query the row by PK (`SELECT <editable cols> FROM t WHERE pk = ?`) and compare the **old** values to the snapshot taken when the cell was first edited. On mismatch, abort with `Row changed since load — refresh required`; provide `r` to refresh the result (re-run the original query into the session, resetting pending edits after confirmation). (Snapshots are captured on the first edit; `r` refreshes in the results pane.)
+- [x] Affected-rows sanity check: each `UPDATE`/`DELETE` should report `RowsAffected == 1`; otherwise roll back and report (guards against a mis-detected PK).
+- [x] After commit: refresh the affected cells from the DB in place (re-query by PK) rather than re-running the whole query, unless refresh fails → fall back to re-running. (MVP: always re-runs the original query after commit; true in-place cell refresh remains a refinement.)
 
 ### 12.5 Tests
 - [ ] DML generation table tests per dialect: placeholder numbering, identifier quoting with embedded quotes, `NULL`s, all supported types, `WHERE` with composite PKs.

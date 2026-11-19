@@ -55,6 +55,7 @@ func (s *Session) Changes() ([]result.Change, error) {
 			changes = append(changes, result.Change{
 				Kind:  result.ChangeDelete,
 				Table: s.Editability.Table,
+				Row:   row,
 				Key:   primaryKey(row),
 			})
 
@@ -73,6 +74,7 @@ func (s *Session) Changes() ([]result.Change, error) {
 			changes = append(changes, result.Change{
 				Kind:   result.ChangeInsert,
 				Table:  s.Editability.Table,
+				Row:    row,
 				Values: values,
 			})
 
@@ -93,6 +95,7 @@ func (s *Session) Changes() ([]result.Change, error) {
 			changes = append(changes, result.Change{
 				Kind:  result.ChangeUpdate,
 				Table: s.Editability.Table,
+				Row:   row,
 				Key:   primaryKey(row),
 				Set:   set,
 			})
