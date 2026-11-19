@@ -142,7 +142,7 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 
 ### 6.4 Large results
 - [ ] Cap in-memory result rows (e.g., 10,000) and display `Showing first N rows` warning.
-- [ ] Make the cap configurable in a settings file.
+- [x] Make the cap configurable in a settings file.
 - [ ] Do not render table/CSV/JSON lazily for MVP; note future virtualization if needed. *(§11 streaming reduces peak memory for the table path, but CSV/JSON views still materialize fully — document this.)*
 
 ---
@@ -380,7 +380,7 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 - [ ] Keyring-backed credential storage. (Requires a new dependency such as `zalando/go-keyring`; awaiting approval. DSNs remain plaintext at 0600.)
 - [x] Per-connection default schema/search_path selector (reduces `information_schema` noise from §10). (Connection form `Schema` → `Options["schema"]`; Postgres `SET search_path`, MySQL `USE`; rejected for SQLite.)
 - [ ] Export to Parquet / Markdown. (Markdown implemented and in the export dialog; Parquet needs an Arrow/Parquet dependency and is awaiting approval.)
-- [ ] Virtualized table for >100k-row results (today the §6.4 cap + §11 streaming truncation cover the common case). (Intentionally not implemented; the 10k cap is the supported design.)
+- [x] Virtualized table for >100k-row results. (Above 5,000 rows the table view switches to a virtualized renderer that formats only the visible window through a bounded cache; the in-memory cap is now configurable via `settings.json` `max_rows` (default 10,000, clamped 100–1,000,000), so >100k results are viewable when configured.)
 - [x] Column resizing / hide columns in table view (persist per-session). (`H` hide, `[`/`]` resize, `0` reset; stored in the session's result view.)
 
 ---

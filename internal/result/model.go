@@ -18,6 +18,14 @@ import (
 const (
 	maxColumnWidth = 40
 	minColumnWidth = 3
+
+	// virtualThreshold switches the table view to the virtualized renderer
+	// above this row count (§15).
+	virtualThreshold = 5000
+	// virtualCacheLimit bounds the formatted-row cache.
+	virtualCacheLimit = 1024
+	// virtualSampleRows bounds the width-sampling scan in virtual mode.
+	virtualSampleRows = 200
 )
 
 // Format identifies the active rendering of a result set.
@@ -44,6 +52,11 @@ type Model struct {
 	pendingCount int
 	hidden       map[string]bool
 	widthDelta   map[string]int
+
+	virtual       bool
+	virtualCursor int
+	rowCache      map[int][]string
+	widthsCache   []int
 
 	format Format
 	width  int
@@ -72,6 +85,7 @@ func New() Model {
 		height:     10,
 		hidden:     make(map[string]bool),
 		widthDelta: make(map[string]int),
+		rowCache:   make(map[int][]string),
 	}
 }
 
@@ -91,7 +105,7 @@ func (m Model) SelectedCell() (int, string, any, bool) {
 	if !m.has || len(visible) == 0 {
 		return 0, "", nil, false
 	}
-	row := m.table.Cursor()
+	row := m.selectedRow()
 	if row < 0 || row >= len(m.result.Rows) {
 		return 0, "", nil, false
 	}
@@ -102,6 +116,15 @@ func (m Model) SelectedCell() (int, string, any, bool) {
 		value = m.result.Rows[row][column]
 	}
 	return row, m.result.Columns[column], value, true
+}
+
+// selectedRow returns the focused result row in either table mode
+// (bubbles/table cursor) or virtual mode (manual cursor).
+func (m Model) selectedRow() int {
+	if m.virtual {
+		return m.virtualCursor
+	}
+	return m.table.Cursor()
 }
 
 // visibleColumns returns the original indexes of columns not hidden.
@@ -137,6 +160,7 @@ func (m *Model) ToggleColumnHidden() {
 	}
 	m.hidden[key] = !m.hidden[key]
 	m.cellCol = min(m.cellCol, max(len(m.visibleColumns())-1, 0))
+	m.invalidateRowCache()
 	m.rebuild()
 }
 
@@ -148,6 +172,7 @@ func (m *Model) ResizeColumn(delta int) {
 	}
 	key := strings.ToLower(name)
 	m.widthDelta[key] = min(max(m.widthDelta[key]+delta, -20), 40)
+	m.invalidateRowCache()
 	m.rebuild()
 }
 
@@ -155,6 +180,7 @@ func (m *Model) ResizeColumn(delta int) {
 func (m *Model) ResetColumnLayout() {
 	m.hidden = make(map[string]bool)
 	m.widthDelta = make(map[string]int)
+	m.invalidateRowCache()
 	m.rebuild()
 }
 
@@ -182,6 +208,9 @@ func (m *Model) SetResult(result db.QueryResult) {
 	m.cellCol = 0
 	m.pendingRows = make(map[int]bool)
 	m.pendingCount = 0
+	m.syncVirtualMode()
+	m.virtualCursor = 0
+	m.invalidateRowCache()
 	m.rebuild()
 	// Set the cursor after rows exist: table clamps the cursor against the
 	// current row count, so doing this before rebuild leaves it at -1.
@@ -205,6 +234,10 @@ func (m *Model) ReplaceRowValues(index int, raw []any) {
 		return
 	}
 	m.result.Rows[index] = append([]any(nil), raw...)
+	m.invalidateRowCache()
+	if m.virtual {
+		m.virtualCursor = min(max(m.virtualCursor, 0), len(m.result.Rows)-1)
+	}
 	m.rebuild()
 }
 
@@ -215,6 +248,10 @@ func (m *Model) RemoveRowResult(index int) {
 	}
 	m.result.Rows = append(m.result.Rows[:index], m.result.Rows[index+1:]...)
 	m.result.RowCount = len(m.result.Rows)
+	if m.virtual && m.virtualCursor >= index && m.virtualCursor > 0 {
+		m.virtualCursor--
+	}
+	m.invalidateRowCache()
 	m.rebuild()
 }
 
@@ -237,7 +274,15 @@ func (m *Model) AppendRows(rows [][]any) {
 	atBottom := oldCount == 0 || m.table.Cursor() >= oldCount-1
 	m.result.Rows = append(m.result.Rows, rows...)
 	m.result.RowCount = len(m.result.Rows)
+	m.invalidateRowCache()
 	m.rebuild()
+	if m.virtual {
+		if atBottom {
+			m.virtualCursor = len(m.result.Rows) - 1
+		}
+		m.virtualCursor = min(m.virtualCursor, len(m.result.Rows)-1)
+		return
+	}
 	if atBottom && len(m.result.Rows) > 0 {
 		m.table.SetCursor(len(m.result.Rows) - 1)
 	}
@@ -283,6 +328,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.viewport, cmd = m.viewport.Update(msg)
 	default:
 		if key, ok := msg.(tea.KeyMsg); ok {
+			if m.virtual && m.virtualUpdate(key) {
+				return m, nil
+			}
 			switch key.String() {
 			case "left", "h":
 				m.moveCell(-1)
@@ -323,7 +371,11 @@ func (m Model) View() string {
 	case FormatCSV, FormatJSON:
 		body = m.viewport.View()
 	default:
-		body = m.table.View()
+		if m.virtual {
+			body = m.virtualView()
+		} else {
+			body = m.table.View()
+		}
 	}
 	body = lipgloss.NewStyle().Height(max(m.height-1, 1)).Render(body)
 	return lipgloss.JoinVertical(lipgloss.Left, body, m.statusLine())
@@ -354,10 +406,16 @@ func (m *Model) rebuild() {
 	if !m.has {
 		return
 	}
+	m.syncVirtualMode()
 	if len(m.result.Columns) == 0 {
 		m.table.SetColumns(nil)
 		m.table.SetRows(nil)
 		m.viewport.SetContent("")
+		return
+	}
+	if m.virtual {
+		// The virtualized renderer works on demand; nothing to pre-build.
+		m.invalidateRowCache()
 		return
 	}
 	// CSV/JSON rendering is deferred until streaming completes to avoid

@@ -51,6 +51,13 @@ These are easy to violate when writing the first implementation:
 - DSNs are masked in the list (`maskDSN`), but the form and the on-disk JSON keep them plaintext.
 - `main` must call `model.Close()` after `tea.NewProgram(...).Run()`; the manager is a pointer inside a copied model, so closing there releases all handles.
 
+## Virtualized table gotchas
+
+- `result.Model` runs two renderers: bubbles/table below `virtualThreshold` (5,000 rows) and a hand-rolled window renderer above it (`virtualView`). Keep both behaviors in sync when touching columns, pending markers, or in-place mutations.
+- Virtual mode keeps raw rows in memory but formats rows on demand (`cachedRow`, bounded by `virtualCacheLimit`); the row cache and `widthsCache` (sampled from `virtualSampleRows` rows) are invalidated by `invalidateRowCache` — call it after ANY change to rows, pending markers, hidden columns, or widths.
+- Virtual navigation keys live in `virtualUpdate` (handled before the table path); `SelectedCell`/`selectedRow` abstract the cursor for both modes.
+- `internal/settings` owns `settings.json` (`max_rows`, clamped 100–1,000,000); the app loads it async on Init and `effectiveMaxRows()` feeds `session.Run`. Settings failures keep the defaults. Do not hardcode `db.DefaultMaxRows` in the app — use `effectiveMaxRows()`.
+
 ## Table info / DBML gotchas
 
 - `db.GetTableInfo` is per-driver; the Postgres DDL is *reconstructed* from introspected columns/constraints (not pg_dump), and SQLite/MySQL use real DDL. Views are supported on all three.

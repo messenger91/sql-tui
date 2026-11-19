@@ -24,6 +24,7 @@ import (
 	"github.com/messenger91/sql-tui/internal/result"
 	"github.com/messenger91/sql-tui/internal/schema"
 	"github.com/messenger91/sql-tui/internal/session"
+	"github.com/messenger91/sql-tui/internal/settings"
 	"github.com/messenger91/sql-tui/internal/styles"
 	"github.com/messenger91/sql-tui/internal/workspace"
 )
@@ -51,6 +52,7 @@ type Config struct {
 	ConnectionsPath string
 	FavoritesPath   string
 	HistoryPath     string
+	SettingsPath    string
 	Clipboard       export.Clipboard
 }
 
@@ -70,6 +72,8 @@ type Model struct {
 	sessions     *session.Manager
 	history      []string
 	historyStore *history.Store
+	settings     settings.Settings
+	config       Config
 
 	focus         Focus
 	width, height int
@@ -128,6 +132,8 @@ func NewWithConfig(cfg Config) Model {
 		sender:       newSenderHolder(),
 		runners:      newRunnerGroup(),
 		historyStore: history.NewStore(cfg.HistoryPath),
+		settings:     settings.Default(),
+		config:       cfg,
 		focus:        FocusWorkspace,
 	}
 }
@@ -142,12 +148,13 @@ func defaultConfig() Config {
 		ConnectionsPath: filepath.Join(base, "connections.json"),
 		FavoritesPath:   filepath.Join(base, "favorites.json"),
 		HistoryPath:     filepath.Join(base, "history.json"),
+		SettingsPath:    filepath.Join(base, settings.FileName),
 	}
 }
 
 // Init implements tea.Model.
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{m.workspace.Init(), m.favorites.Init(), m.loadHistory()}
+	cmds := []tea.Cmd{m.workspace.Init(), m.favorites.Init(), m.loadHistory(), m.loadSettings()}
 	if s := m.activeSession(); s != nil {
 		cmds = append(cmds, s.Editor.Init())
 	}
@@ -220,6 +227,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.browser.SetTables(msg.Tables)
 			}
 		}
+		return m, nil
+	case settingsLoadedMsg:
+		m.settings = msg.Settings.Sanitized()
 		return m, nil
 	case historyLoadedMsg:
 		if msg.Err != nil {
@@ -440,7 +450,7 @@ func (m Model) startQuery(sql string) (tea.Model, tea.Cmd) {
 	go func() {
 		defer m.runners.done()
 		defer close(events)
-		session.Run(ctx, handle, sql, db.DefaultMaxRows, func(event session.Event) bool {
+		session.Run(ctx, handle, sql, m.effectiveMaxRows(), func(event session.Event) bool {
 			switch event.Kind {
 			case session.EventDone, session.EventError, session.EventCancelled:
 				events <- event

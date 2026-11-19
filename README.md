@@ -35,9 +35,11 @@ apply.
   constraints, and the DDL for any table or view.
 - **Visual DBML** (`D`): render the whole connection schema as
   [dbdiagram.io](https://dbdiagram.io)-style Database Markup Language.
-- **Results**: table / CSV / JSON views (`v`), capped at 10,000 rows with
-  truncation markers, Markdown/CSV/JSON export to file or clipboard
-  (`ctrl+e`), plus column hide/resize (`H`, `[`, `]`, `0`).
+- **Results**: table / CSV / JSON views (`v`) with a virtualized renderer for
+  large result sets, an in-memory row cap configurable via
+  `settings.json` (`max_rows`, default 10,000, up to 1,000,000), truncation
+  markers, Markdown/CSV/JSON export to file or clipboard (`ctrl+e`), and
+  column hide/resize (`H`, `[`, `]`, `0`).
 - **Favorites**: named SQL snippets persisted to `favorites.json`
   (`ctrl+s` to save, `ctrl+f` to browse).
 - **Multi-tab sessions**: one editor + result view per tab, executed
@@ -117,6 +119,7 @@ State lives under your config directory (honours `XDG_CONFIG_HOME`):
 - `sql-tui/connections.json` — connections, 0600, atomic writes
 - `sql-tui/favorites.json` — favorite scripts, 0600
 - `sql-tui/history.json` — last 200 executed statements, 0600
+- `sql-tui/settings.json` — user preferences (`max_rows`), 0600
 
 Result sets are capped at 10,000 in-memory rows (truncation is shown in the
 status line). Favorite/connection dialogs always ask before overwriting.
