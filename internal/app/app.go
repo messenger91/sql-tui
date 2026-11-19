@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -71,6 +70,11 @@ type Model struct {
 	active       *db.Connection
 	schemaLoad   bool
 	confirmClose session.ID
+
+	sender          *senderHolder
+	runners         *runnerGroup
+	cancelRequested bool
+	quitting        bool
 }
 
 // New returns the root model using the platform config directory.
@@ -101,6 +105,8 @@ func NewWithConfig(cfg Config) Model {
 		schema:    schema.NewCache(),
 		clipboard: clipboard,
 		sessions:  sessions,
+		sender:    newSenderHolder(),
+		runners:   newRunnerGroup(),
 		focus:     FocusWorkspace,
 	}
 }
@@ -137,6 +143,11 @@ func (m Model) activeSession() *session.Session {
 
 // Close releases every open database handle. Call it after the program exits.
 func (m Model) Close() error {
+	m.sender.clear()
+	for _, s := range m.sessions.Sessions() {
+		s.Cancel()
+	}
+	m.runners.wait()
 	return m.manager.CloseAll()
 }
 
@@ -185,27 +196,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case query.ExecuteRequestedMsg:
 		m.clearNotice()
 		return m.startQuery(msg.SQL)
-	case queryFinishedMsg:
-		s, ok := m.sessions.Get(msg.SessionID)
-		if !ok {
-			return m, nil
-		}
-		s.Editor.ReportSuccess(msg.Statements, msg.Result)
-		s.Results.SetResult(msg.Result)
-		s.MarkDone()
-		if active := m.activeSession(); active != nil && active.ID == s.ID {
-			m.focus = FocusResult
-			m.syncFocus()
-		}
-		return m, nil
-	case queryFailedMsg:
-		s, ok := m.sessions.Get(msg.SessionID)
-		if !ok {
-			return m, nil
-		}
-		s.Editor.ReportError(msg.Err)
-		s.MarkFailed()
-		return m, nil
 	case favorites.LoadMsg:
 		if s := m.activeSession(); s != nil {
 			s.SetSQL(msg.SQL)
@@ -231,7 +221,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case sessionEventMsg:
-		return m.routeSessionEvent(msg)
+		return m.handleRunnerEvent(msg)
+	case shutdownDoneMsg:
+		return m, tea.Quit
 	default:
 		workspaceModel, workspaceCmd := m.workspace.Update(msg)
 		favoritesModel, favoritesCmd := m.favorites.Update(msg)
@@ -246,17 +238,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(workspaceCmd, favoritesCmd, sessionCmd)
 	}
-}
-
-type queryFinishedMsg struct {
-	SessionID  session.ID
-	Result     db.QueryResult
-	Statements int
-}
-
-type queryFailedMsg struct {
-	SessionID session.ID
-	Err       error
 }
 
 type exportDoneMsg struct {
@@ -325,6 +306,9 @@ func (m Model) startQuery(sql string) (tea.Model, tea.Cmd) {
 	if s == nil {
 		return m, nil
 	}
+	if s.Running() {
+		return m, nil
+	}
 	connectionID := s.ConnectionID
 	if connectionID == "" && m.active != nil {
 		connectionID = m.active.ID
@@ -340,37 +324,125 @@ func (m Model) startQuery(sql string) (tea.Model, tea.Cmd) {
 		s.MarkFailed()
 		return m, nil
 	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	s.Title = session.DeriveTitle(sql)
 	s.MarkRunning(cancel)
 	s.Editor.MarkRunning()
-	return m, m.executeQuery(ctx, cancel, handle, s.ID, sql)
+	m.cancelRequested = false
+	m.quitting = false
+
+	events := make(chan session.Event, 8)
+	sessionID := s.ID
+	m.runners.begin(2)
+
+	go func() {
+		defer m.runners.done()
+		defer close(events)
+		session.Run(ctx, handle, sql, db.DefaultMaxRows, func(event session.Event) bool {
+			switch event.Kind {
+			case session.EventDone, session.EventError, session.EventCancelled:
+				events <- event
+				return true
+			}
+			select {
+			case events <- event:
+				return true
+			case <-ctx.Done():
+				return false
+			}
+		})
+	}()
+
+	go func() {
+		defer m.runners.done()
+		for event := range events {
+			m.sender.publish(sessionEventMsg{SessionID: sessionID, Event: event})
+		}
+	}()
+
+	return m, nil
 }
 
-func (m Model) executeQuery(ctx context.Context, cancel context.CancelFunc, handle *sql.DB, sessionID session.ID, sql string) tea.Cmd {
-	return func() tea.Msg {
-		defer cancel()
-		statements := query.SplitStatements(sql)
-		if len(statements) == 0 {
-			return queryFailedMsg{SessionID: sessionID, Err: errors.New("no executable SQL")}
-		}
-
-		started := time.Now()
-		var last db.QueryResult
-		for i, statement := range statements {
-			result := db.Execute(ctx, handle, statement, db.DefaultMaxRows)
-			if result.Err != nil {
-				return queryFailedMsg{SessionID: sessionID, Err: fmt.Errorf("statement %d: %w", i+1, result.Err)}
-			}
-			last = result
-		}
-		last.Elapsed = time.Since(started)
-		return queryFinishedMsg{SessionID: sessionID, Result: last, Statements: len(statements)}
+func (m Model) handleRunnerEvent(msg sessionEventMsg) (tea.Model, tea.Cmd) {
+	s, ok := m.sessions.Get(msg.SessionID)
+	if !ok {
+		return m, nil
 	}
+	event, ok := msg.Event.(session.Event)
+	if !ok {
+		return m, nil
+	}
+
+	switch event.Kind {
+	case session.EventStarted:
+		s.Results.SetStreaming(true)
+		s.Results.SetResult(db.QueryResult{Columns: event.Columns})
+	case session.EventBatch:
+		s.Results.AppendRows(event.Rows)
+	case session.EventDone:
+		s.Results.SetStreaming(false)
+		s.Editor.ReportSuccess(event.Statements, db.QueryResult{
+			RowCount:  event.RowCount,
+			Elapsed:   event.Elapsed,
+			Truncated: event.Truncated,
+		})
+		s.MarkDone()
+		if active := m.activeSession(); active != nil && active.ID == s.ID {
+			m.focus = FocusResult
+			m.syncFocus()
+		}
+	case session.EventError:
+		s.Results.SetStreaming(false)
+		s.Editor.ReportError(event.Err)
+		s.MarkFailed()
+	case session.EventCancelled:
+		s.Results.SetStreaming(false)
+		s.Editor.SetStatus("cancelled")
+		s.MarkCancelled()
+	}
+	return m, nil
+}
+
+type shutdownDoneMsg struct{}
+
+// shutdownCmd stops every runner before the program exits, so forwarders never
+// block in tea.Program.Send after the event loop is gone.
+func (m *Model) shutdownCmd() tea.Cmd {
+	m.sender.clear()
+	for _, s := range m.sessions.Sessions() {
+		s.Cancel()
+		s.MarkCancelled()
+		s.Results.SetStreaming(false)
+	}
+	return func() tea.Msg {
+		m.runners.wait()
+		return shutdownDoneMsg{}
+	}
+}
+
+func (m *Model) cancelSession(s *session.Session) {
+	s.Cancel()
+	s.MarkCancelled()
+	s.Editor.SetStatus("cancelled")
+	s.Results.SetStreaming(false)
+	m.cancelRequested = true
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, m.keys.Quit) {
+		if m.quitting {
+			return m, nil
+		}
+		if s := m.activeSession(); s != nil && s.Running() && !m.cancelRequested {
+			m.cancelSession(s)
+			cmd := m.setNotice("cancelling…")
+			return m, cmd
+		}
+		if m.runners.count() > 0 {
+			m.quitting = true
+			return m, m.shutdownCmd()
+		}
 		return m, tea.Quit
 	}
 	if m.confirmClose != "" {
@@ -423,6 +495,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.modal = nil
 		}
 		return m, nil
+	}
+	if msg.String() == "esc" {
+		if s := m.activeSession(); s != nil && s.Running() {
+			m.cancelSession(s)
+			cmd := m.setNotice("cancelling…")
+			return m, cmd
+		}
 	}
 	switch {
 	case key.Matches(msg, m.keys.Cycle):
@@ -648,12 +727,6 @@ func (m Model) handleBrowserKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 	}
-	return m, nil
-}
-
-// routeSessionEvent dispatches an async query event to its owning session.
-// Sessions are introduced in §11; until then events are dropped.
-func (m Model) routeSessionEvent(sessionEventMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 

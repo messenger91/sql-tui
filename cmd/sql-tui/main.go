@@ -11,7 +11,9 @@ import (
 
 func main() {
 	model := app.New()
-	if _, err := tea.NewProgram(model).Run(); err != nil {
+	program := tea.NewProgram(model)
+	model.SetSender(program.Send)
+	if _, err := program.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "sql-tui: %v\n", err)
 		os.Exit(1)
 	}

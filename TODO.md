@@ -252,21 +252,22 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 - [x] Closing the last tab keeps an empty tab alive (don't leave the query pane blank).
 
 ### 11.3 Async runner (core)
-- [ ] `internal/session/runner.go`: `Run(ctx, db, sql, onEvent)` opens `rows`, iterates `rows.Next()` in a goroutine, and emits events:
+- [x] `internal/session/runner.go`: `Run(ctx, db, sql, onEvent)` opens `rows`, iterates `rows.Next()` in a goroutine, and emits events:
   - `startedMsg{sessionID, columns}`
   - `batchMsg{sessionID, rows [][]any}` — batched every N rows (e.g., 200) **or** every T ms (e.g., 50ms), whichever comes first, to avoid flooding the channel.
   - `doneMsg{sessionID, rowCount, elapsed}`
   - `errorMsg{sessionID, err}`
-- [ ] Deliver events via `tea.Program.Send`; the root model routes by `sessionID` to the owning `Session`.
-- [ ] **Concurrency**: each session runs at most one query; a second `ctrl+r` in a running session is a no-op (or queues, decide — recommend no-op with a beep/status).
-- [ ] **Cancellation**: each session owns a `context.WithCancel`; `ctrl+c`/`esc` while focused on a running session cancels it, emits `cancelledMsg`; the runner goroutine must exit promptly (use `rows.Close()` + select on `ctx.Done()` in the loop).
-- [ ] **Goroutine hygiene**: track running runners in a `sync.WaitGroup`; on app quit, cancel all, wait, then `CloseAll()`. No leaked goroutines — assert with `go test -race`.
-- [ ] **Streaming into the UI**:
-  - [ ] Table view appends rows from `batchMsg`; auto-scroll only if the user is already at the bottom.
-  - [ ] Status line shows `Streaming… 4,231 rows · 1.2s` while running, then `4,231 rows · 1.2s · done`.
-  - [ ] Respect the §6.4 cap: once the cap is hit, stop appending but keep draining (`rows.Next()` → discard) so the connection isn't left open, and show `Showing first 10,000 rows (truncated)`.
-  - [ ] CSV/JSON views render from the accumulated buffer after `doneMsg` (defer rendering while streaming to keep it cheap).
-- [ ] **Backpressure**: bounded channel (e.g., cap 8 batches); if the UI is slow, the runner blocks on send — acceptable, but ensure `ctx.Done()` is selected while blocked.
+  - Implemented as `session.Event{Kind, Columns, Rows, RowCount, Statements, Truncated, Elapsed, Err}`; batching is 200 rows / 50 ms.
+- [x] Deliver events via `tea.Program.Send`; the root model routes by `sessionID` to the owning `Session`. (`main` injects `program.Send` into a shared sender holder; a forwarder goroutine drains each session's bounded channel.)
+- [x] **Concurrency**: each session runs at most one query; a second `ctrl+r` in a running session is a no-op (or queues, decide — recommend no-op with a beep/status). (Editor blocks `ctrl+r`; `startQuery` also guards `Running()`.)
+- [x] **Cancellation**: each session owns a `context.WithCancel`; `ctrl+c`/`esc` while focused on a running session cancels it, emits `cancelledMsg`; the runner goroutine must exit promptly (use `rows.Close()` + select on `ctx.Done()` in the loop). (Second `ctrl+c` performs graceful shutdown.)
+- [x] **Goroutine hygiene**: track running runners in a `sync.WaitGroup`; on app quit, cancel all, wait, then `CloseAll()`. No leaked goroutines — assert with `go test -race`. (`runnerGroup` counts runner+forwarder goroutines; shutdown clears the sender first so `Program.Send` cannot block after the loop stops; `main.Close` waits then closes handles.)
+- [x] **Streaming into the UI**:
+  - [x] Table view appends rows from `batchMsg`; auto-scroll only if the user is already at the bottom.
+  - [x] Status line shows `Streaming… 4,231 rows · 1.2s` while running, then `4,231 rows · 1.2s · done`. (Shows `Streaming… N rows · table`, then the final summary; elapsed is measured across all statements.)
+  - [x] Respect the §6.4 cap: once the cap is hit, stop appending but keep draining (`rows.Next()` → discard) so the connection isn't left open, and show `Showing first 10,000 rows (truncated)`. (Status appends `· truncated`.)
+  - [x] CSV/JSON views render from the accumulated buffer after `doneMsg` (defer rendering while streaming to keep it cheap).
+- [x] **Backpressure**: bounded channel (e.g., cap 8 batches); if the UI is slow, the runner blocks on send — acceptable, but ensure `ctx.Done()` is selected while blocked. (Batch/started sends select on `ctx.Done()`; terminal events are delivered unconditionally so cancellation is observable.)
 
 ### 11.4 Favorites/export/view-toggle integration
 - [ ] Favorites, export, and `v` view toggle operate on the **focused session**; dialog titles include the session/tab name.

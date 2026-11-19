@@ -1,11 +1,10 @@
 package app
 
-// SessionID identifies a query session (§11).
-type SessionID string
+import "github.com/messenger91/sql-tui/internal/session"
 
-// sessionEventMsg carries one asynchronous event for a specific session. The
-// root model routes it by SessionID; §11 attaches the concrete event types.
+// sessionEventMsg carries one asynchronous runner event for a specific
+// session. The root model routes it by SessionID.
 type sessionEventMsg struct {
-	SessionID SessionID
+	SessionID session.ID
 	Event     any
 }

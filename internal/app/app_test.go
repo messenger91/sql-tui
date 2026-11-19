@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -301,24 +302,35 @@ func openActive(t *testing.T, m Model) Model {
 	return m
 }
 
+// runQuerySync starts the async runner with a fake sender, waits for all
+// events, and feeds them into the model in order.
+func runQuerySync(t *testing.T, m Model, sql string) Model {
+	t.Helper()
+	var mu sync.Mutex
+	var messages []tea.Msg
+	m.SetSender(func(msg tea.Msg) {
+		mu.Lock()
+		messages = append(messages, msg)
+		mu.Unlock()
+	})
+
+	updated, _ := m.Update(query.ExecuteRequestedMsg{SQL: sql})
+	m = updated.(Model)
+	m.runners.wait()
+
+	mu.Lock()
+	pending := append([]tea.Msg(nil), messages...)
+	mu.Unlock()
+	for _, msg := range pending {
+		updated, _ = m.Update(msg)
+		m = updated.(Model)
+	}
+	return m
+}
+
 func TestQueryExecutionReturnsRows(t *testing.T) {
 	m := openActive(t, newSized(t, 80, 24))
-
-	updated, cmd := m.Update(query.ExecuteRequestedMsg{SQL: "SELECT 1 AS n"})
-	m = updated.(Model)
-	if !m.activeSession().Editor.Running() {
-		t.Fatal("query pane not marked running")
-	}
-	if cmd == nil {
-		t.Fatal("no execution command")
-	}
-
-	msg, ok := cmd().(queryFinishedMsg)
-	if !ok {
-		t.Fatalf("unexpected message %T", msg)
-	}
-	updated, _ = m.Update(msg)
-	m = updated.(Model)
+	m = runQuerySync(t, m, "SELECT 1 AS n")
 
 	if s := m.activeSession(); s.State != session.StateDone {
 		t.Fatalf("session state = %v", s.State)
@@ -342,15 +354,7 @@ func TestQueryExecutionRunsAllStatements(t *testing.T) {
 	m := openActive(t, newSized(t, 80, 24))
 	sql := "CREATE TABLE t (x INTEGER); INSERT INTO t VALUES (7); SELECT x FROM t"
 
-	updated, cmd := m.Update(query.ExecuteRequestedMsg{SQL: sql})
-	m = updated.(Model)
-	msg := cmd().(queryFinishedMsg)
-	if msg.Statements != 3 {
-		t.Fatalf("statements = %d", msg.Statements)
-	}
-
-	updated, _ = m.Update(msg)
-	m = updated.(Model)
+	m = runQuerySync(t, m, sql)
 	if s := m.activeSession(); s.State != session.StateDone {
 		t.Fatalf("session state = %v", s.State)
 	}
@@ -366,15 +370,7 @@ func TestQueryExecutionRunsAllStatements(t *testing.T) {
 func TestQueryExecutionFailureKeepsFocus(t *testing.T) {
 	m := openActive(t, newSized(t, 80, 24))
 
-	updated, cmd := m.Update(query.ExecuteRequestedMsg{SQL: "SELECT * FROM missing"})
-	m = updated.(Model)
-	failed, ok := cmd().(queryFailedMsg)
-	if !ok {
-		t.Fatal("expected queryFailedMsg")
-	}
-
-	updated, _ = m.Update(failed)
-	m = updated.(Model)
+	m = runQuerySync(t, m, "SELECT * FROM missing")
 	if s := m.activeSession(); s.State != session.StateError {
 		t.Fatalf("session state = %v", s.State)
 	}
@@ -401,14 +397,7 @@ func TestQueryWithoutConnectionIsRejected(t *testing.T) {
 func TestResultTableRendersInPane(t *testing.T) {
 	m := openActive(t, newSized(t, 80, 24))
 
-	updated, cmd := m.Update(query.ExecuteRequestedMsg{SQL: "SELECT 42 AS answer"})
-	m = updated.(Model)
-	finished, ok := cmd().(queryFinishedMsg)
-	if !ok {
-		t.Fatal("expected queryFinishedMsg")
-	}
-	updated, _ = m.Update(finished)
-	m = updated.(Model)
+	m = runQuerySync(t, m, "SELECT 42 AS answer")
 
 	view := ansi.Strip(m.View())
 	for _, want := range []string{"answer", "42", "table"} {

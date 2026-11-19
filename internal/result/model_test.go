@@ -153,6 +153,65 @@ func TestTruncatedStatus(t *testing.T) {
 	}
 }
 
+func TestStreamingStatus(t *testing.T) {
+	m := New()
+	m.SetSize(60, 10)
+	m.SetResult(db.QueryResult{Columns: []string{"id"}})
+	m.SetStreaming(true)
+	m.AppendRows([][]any{{int64(1)}, {int64(2)}})
+
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "Streaming… 2 rows") {
+		t.Fatalf("view missing streaming status:\n%s", view)
+	}
+}
+
+func TestCSVViewIsDeferredWhileStreaming(t *testing.T) {
+	m := New()
+	m.SetSize(60, 12)
+	m.SetResult(db.QueryResult{Columns: []string{"id"}})
+	m.SetFormat(FormatCSV)
+	m.SetStreaming(true)
+
+	m.AppendRows([][]any{{int64(1)}})
+	if strings.Contains(m.viewport.View(), "1") {
+		t.Fatalf("CSV rebuilt while streaming:\n%s", m.viewport.View())
+	}
+	if !strings.Contains(ansi.Strip(m.View()), "Streaming… 1 rows") {
+		t.Fatalf("streaming status missing:\n%s", m.View())
+	}
+
+	m.SetStreaming(false)
+	if view := m.viewport.View(); !strings.Contains(view, "id") || !strings.Contains(view, "1") {
+		t.Fatalf("CSV not rebuilt after streaming:\n%s", view)
+	}
+}
+
+func TestAppendRowsFollowsBottomOnly(t *testing.T) {
+	res := db.QueryResult{Columns: []string{"id"}}
+	for i := 0; i < 20; i++ {
+		res.Rows = append(res.Rows, []any{int64(i)})
+	}
+	res.RowCount = len(res.Rows)
+
+	m := New()
+	m.SetSize(40, 8)
+	m.SetResult(res)
+	m.Focus()
+
+	// Cursor starts at the top (SetResult), so appends must not move it.
+	m.AppendRows([][]any{{int64(20)}})
+	if m.table.Cursor() != 0 {
+		t.Fatalf("cursor moved while at top: %d", m.table.Cursor())
+	}
+
+	m.table.SetCursor(len(m.table.Rows()) - 1)
+	m.AppendRows([][]any{{int64(21)}})
+	if got := m.table.Cursor(); got != len(m.table.Rows())-1 {
+		t.Fatalf("cursor did not follow bottom: %d", got)
+	}
+}
+
 func TestCSVView(t *testing.T) {
 	m := New()
 	m.SetSize(60, 10)

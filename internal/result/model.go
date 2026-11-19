@@ -34,8 +34,9 @@ type Model struct {
 	table    table.Model
 	viewport viewport.Model
 
-	result db.QueryResult
-	has    bool
+	result    db.QueryResult
+	has       bool
+	streaming bool
 
 	format Format
 	width  int
@@ -94,17 +95,31 @@ func (m *Model) SetResult(result db.QueryResult) {
 	m.viewport.SetYOffset(0)
 }
 
+// SetStreaming toggles the streaming status label. Turning it off rebuilds
+// deferred CSV/JSON views once the result is complete.
+func (m *Model) SetStreaming(streaming bool) {
+	m.streaming = streaming
+	if !streaming {
+		m.rebuild()
+	}
+}
+
 // AppendRows streams more rows into the current result without resetting the
-// cursor (§11).
+// cursor (§11). It follows the bottom if the cursor was already there.
 func (m *Model) AppendRows(rows [][]any) {
 	if !m.has {
 		return
 	}
+	oldCount := len(m.result.Rows)
+	atBottom := oldCount == 0 || m.table.Cursor() >= oldCount-1
 	for _, row := range rows {
 		m.result.Rows = append(m.result.Rows, row)
 	}
 	m.result.RowCount = len(m.result.Rows)
 	m.rebuild()
+	if atBottom && len(m.result.Rows) > 0 {
+		m.table.SetCursor(len(m.result.Rows) - 1)
+	}
 }
 
 // Result returns the raw result and whether one is present.
@@ -176,6 +191,9 @@ func (m Model) statusLine() string {
 }
 
 func (m Model) summary() string {
+	if m.streaming {
+		return fmt.Sprintf("Streaming… %d rows · %s", m.result.RowCount, m.format)
+	}
 	rows := "rows"
 	if m.result.RowCount == 1 {
 		rows = "row"
@@ -196,6 +214,11 @@ func (m *Model) rebuild() {
 		m.table.SetColumns(nil)
 		m.table.SetRows(nil)
 		m.viewport.SetContent("")
+		return
+	}
+	// CSV/JSON rendering is deferred until streaming completes to avoid
+	// re-serializing the whole result on every batch.
+	if m.streaming && m.format != FormatTable {
 		return
 	}
 

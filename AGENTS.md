@@ -2,7 +2,7 @@
 
 ## Current state
 
-Completed: §0–§9 — bootstrap, `internal/db` (SQLite, MySQL, and Postgres: connect, execute, schema), root TUI shell, workspace pane, query editor, table/CSV/JSON result views, view toggle, and export to file or clipboard. **M3, M4, and M5 are complete; §10 is complete; §11.1–§11.2 are complete.** Next: §11.3 async runner/streaming. `TODO.md` is authoritative for what is implemented.
+Completed: §0–§9 — bootstrap, `internal/db` (SQLite, MySQL, and Postgres: connect, execute, schema), root TUI shell, workspace pane, query editor, table/CSV/JSON result views, view toggle, and export to file or clipboard. **M3, M4, and M5 are complete; §10 is complete; §11.1–§11.3 are complete.** Next: §11.4 favorites/export/view-toggle integration hardening. `TODO.md` is authoritative for what is implemented.
 
 ## Source of truth
 
@@ -49,6 +49,15 @@ These are easy to violate when writing the first implementation:
 - Activation is message-based: workspace emits `ActivatedMsg`; the root model focuses the query pane, calls `workspace.ActivationSucceeded` (which also clears the `connecting…` spinner), and starts an async `db.LoadSchema`. Editing the active connection re-emits `ActivatedMsg` so the schema is reloaded. If a new activation message is ever added, clear `busy` there too or the spinner runs forever.
 - DSNs are masked in the list (`maskDSN`), but the form and the on-disk JSON keep them plaintext.
 - `main` must call `model.Close()` after `tea.NewProgram(...).Run()`; the manager is a pointer inside a copied model, so closing there releases all handles.
+
+## Async runner gotchas
+
+- `main` must call `model.SetSender(program.Send)` **before** `program.Run()`; the sender holder is a pointer shared with the program's model copy.
+- Each run spawns exactly two goroutines (runner + `Program.Send` forwarder) counted by `runnerGroup`. Shutdown clears the sender **before** cancelling/waiting so a forwarder can never block inside `Send` after the event loop stops.
+- Batch/started events select on `ctx.Done()`; terminal events (`done`/`error`/`cancelled`) are sent unconditionally so the UI reliably learns the outcome.
+- `ctrl+c` cancels the active running session first; a second `ctrl+c` runs graceful shutdown (`shutdownDoneMsg` → quit). `esc` cancels a running session when no modal/popup is open.
+- `EventDone` switches focus to the results pane when the session is active (preserves the §5 behavior). Streaming batches update `result.Model` in place; CSV/JSON serialization is deferred until streaming stops.
+- The runner drains rows past the 10k cap (never leaves the connection mid-result) and reports `Truncated` in the final event.
 
 ## Tab / session wiring gotchas
 

@@ -10,7 +10,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/messenger91/sql-tui/internal/export"
-	"github.com/messenger91/sql-tui/internal/query"
 )
 
 type fakeClipboard struct {
@@ -40,13 +39,7 @@ func newExportModel(t *testing.T, clipboard export.Clipboard) Model {
 
 func executeSQL(t *testing.T, m Model, sql string) Model {
 	t.Helper()
-	updated, cmd := m.Update(query.ExecuteRequestedMsg{SQL: sql})
-	m = updated.(Model)
-	if cmd == nil {
-		t.Fatal("no execution command")
-	}
-	updated, _ = m.Update(cmd())
-	return updated.(Model)
+	return runQuerySync(t, m, sql)
 }
 
 func TestExportToFile(t *testing.T) {
