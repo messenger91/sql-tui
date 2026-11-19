@@ -274,10 +274,10 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 - [x] Exporting a still-streaming session is disabled with a tooltip: `wait for query to finish`. (Footer notice `wait for the query to finish`; the export dialog does not open.)
 
 ### 11.5 Tests
-- [ ] Session manager unit tests: create/close/switch, title derivation, running-tab close confirmation.
-- [ ] Runner tests against SQLite in-memory: batch sizes, cancellation mid-stream (`ctx` cancel after N batches → no goroutine leak, `rows` closed), truncation at cap, error propagation.
-- [ ] `go test -race` across the session package; a stress test that runs 10 concurrent queries and asserts all complete/cancel cleanly.
-- [ ] Golden tests: tab bar `View()` with mixed states (idle/running/done/error).
+- [x] Session manager unit tests: create/close/switch, title derivation, running-tab close confirmation.
+- [x] Runner tests against SQLite in-memory: batch sizes, cancellation mid-stream (`ctx` cancel after N batches → no goroutine leak, `rows` closed), truncation at cap, error propagation.
+- [x] `go test -race` across the session package; a stress test that runs 10 concurrent queries and asserts all complete/cancel cleanly. (`goleak` runs in `session.TestMain`; concurrent complete/cancel stress tests added.)
+- [x] Golden tests: tab bar `View()` with mixed states (idle/running/done/error). (`internal/app/testdata/tab_bar.golden`.)
 
 ---
 
