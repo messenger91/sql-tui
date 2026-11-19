@@ -28,6 +28,7 @@ Completed: §0–§4 — bootstrap, `internal/db` (full SQLite; MySQL/Postgres c
 - Single test: `go test -race -run TestName ./internal/db/`.
 - `staticcheck` and `golangci-lint` are not installed in this environment; `make lint` skips `staticcheck` with a notice.
 - Integration tests for MySQL/Postgres use the `//go:build integration` tag and require Docker Compose fixtures; plain `go test ./...` must not require them.
+- Manual PTY smoke tests: run under `TERM=dumb` (e.g. `script -qec "./bin/sql-tui" /dev/null`). With a colour-capable `TERM`, termenv blocks waiting for an OSC background-colour reply that `script` never sends, so the app appears to hang before entering raw mode.
 
 ## Architecture invariants
 
