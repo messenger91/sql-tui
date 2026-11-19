@@ -443,9 +443,12 @@ func (m Model) popupView() string {
 		}
 		label = ansi.Truncate(label, max(m.width-8, 10), "…")
 		if i == m.popup.cursor {
-			label = lipgloss.NewStyle().Reverse(true).Bold(true).Render(label)
-		} else if item.Kind == kindColumn || item.Kind == kindView || item.Kind == kindSchema {
-			label = dim.Render(label)
+			label = lipgloss.NewStyle().Reverse(true).Bold(true).Render("› " + label)
+		} else {
+			label = "  " + label
+			if item.Kind == kindColumn || item.Kind == kindView || item.Kind == kindSchema {
+				label = dim.Render(label)
+			}
 		}
 		lines = append(lines, label)
 	}

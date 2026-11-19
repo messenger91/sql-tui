@@ -222,10 +222,10 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 - [x] Ensure `esc`/`tab` are only swallowed by the popup when it is open — otherwise pass through to the textarea/pane focus logic.
 
 ### 10.4 Tests
-- [ ] Tokenizer table tests: strings with escaped quotes, comments (`--`, `/* */`), multiple statements, aliases, trailing whitespace.
-- [ ] Clause/scope resolution tests: multi-table `JOIN` with aliases, subqueries (document: subquery scoping is best-effort).
-- [ ] Ranking tests: prefix vs fuzzy ordering, case-insensitivity.
-- [ ] Golden test for popup `View()`.
+- [x] Tokenizer table tests: strings with escaped quotes, comments (`--`, `/* */`), multiple statements, aliases, trailing whitespace.
+- [x] Clause/scope resolution tests: multi-table `JOIN` with aliases, subqueries (document: subquery scoping is best-effort). (Subqueries intentionally fall back to all columns.)
+- [x] Ranking tests: prefix vs fuzzy ordering, case-insensitivity.
+- [x] Golden test for popup `View()`. (`internal/query/testdata/autocomplete_popup*.golden`, regenerated with `go test ./internal/query -run TestGolden -update`.)
 
 ---
 
