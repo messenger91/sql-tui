@@ -2,7 +2,7 @@
 
 ## Current state
 
-Completed: §0–§9 — bootstrap, `internal/db` (SQLite, MySQL, and Postgres: connect, execute, schema), root TUI shell, workspace pane, query editor, table/CSV/JSON result views, view toggle, and export to file or clipboard. **M3, M4, and M5 are complete.** Next: §10 schema browser + autocomplete (M6). `TODO.md` is authoritative for what is implemented.
+Completed: §0–§9 — bootstrap, `internal/db` (SQLite, MySQL, and Postgres: connect, execute, schema), root TUI shell, workspace pane, query editor, table/CSV/JSON result views, view toggle, and export to file or clipboard. **M3, M4, and M5 are complete; §10.1 (schema cache) is complete.** Next: §10.2 schema browser. `TODO.md` is authoritative for what is implemented.
 
 ## Source of truth
 
@@ -48,6 +48,14 @@ These are easy to violate when writing the first implementation:
 - Activation is message-based: workspace emits `ActivatedMsg`; the root model focuses the query pane, calls `workspace.ActivationSucceeded` (which also clears the `connecting…` spinner), and starts an async `db.LoadSchema`. Editing the active connection re-emits `ActivatedMsg` so the schema is reloaded. If a new activation message is ever added, clear `busy` there too or the spinner runs forever.
 - DSNs are masked in the list (`maskDSN`), but the form and the on-disk JSON keep them plaintext.
 - `main` must call `model.Close()` after `tea.NewProgram(...).Run()`; the manager is a pointer inside a copied model, so closing there releases all handles.
+
+## Schema cache gotchas
+
+- `schema.Cache` is concurrency-safe and stores an immutable `*Index` snapshot per connection; read it with `Get`, never mutate an entry's slices (they are shared).
+- The index is case-insensitive and keeps duplicate names (same column in several tables); `Find` returns all matches and each column suggestion carries its owning table.
+- Activation marks `schemaLoad` and calls `refreshSchema`; the status bar renders `schema: loading…`, `schema: N objects`, `schema: N objects (partial)`, or `schema: unavailable`.
+- Deactivation clears the active connection but **keeps** cached schemas; activation always refreshes. Deleting a connection does not evict its cache entry yet.
+- `ctrl+r` inside the schema browser (§10.2) must call `refreshSchema`; the query pane's `ctrl+r` still executes SQL because keys are routed by focus.
 
 ## Favorites gotchas
 

@@ -192,10 +192,10 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 **Why it's high effort**: three driver-specific introspection paths, an async cache with invalidation, a popup UI layered over `textarea` that must intercept keys, a tokenizer to know *where* the cursor is in the query, and context rules that pick the right candidate class (tables vs columns vs keywords).
 
 ### 10.1 Schema introspection & cache
-- [ ] `internal/schema` package: `SchemaCache` keyed by `ConnectionID`, storing `[]TableMeta` + a suggestion index (lowercased name → table/column).
-- [ ] On connection activation, run `db.LoadSchema` in a `tea.Cmd`; show `Loading schema…` in the status bar; non-blocking.
-- [ ] Refresh triggers: on connect, `ctrl+r` inside the schema browser, and (optional) after a DDL statement is detected in the editor.
-- [ ] Handle partial failure (permission denied on some catalogs) — keep what loaded, surface a subtle warning.
+- [x] `internal/schema` package: `SchemaCache` keyed by `ConnectionID`, storing `[]TableMeta` + a suggestion index (lowercased name → table/column).
+- [x] On connection activation, run `db.LoadSchema` in a `tea.Cmd`; show `Loading schema…` in the status bar; non-blocking.
+- [x] Refresh triggers: on connect, `ctrl+r` inside the schema browser, and (optional) after a DDL statement is detected in the editor. (On connect plus `refreshSchema` helper; the browser key arrives with §10.2; DDL detection skipped as optional.)
+- [x] Handle partial failure (permission denied on some catalogs) — keep what loaded, surface a subtle warning. (Status shows `schema: N objects (partial)` or `schema: unavailable`.)
 
 ### 10.2 Schema browser pane/overlay
 - [ ] `ctrl+b` toggles a schema browser overlay (or a resizable left pane).

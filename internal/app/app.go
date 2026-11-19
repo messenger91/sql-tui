@@ -21,6 +21,7 @@ import (
 	"github.com/messenger91/sql-tui/internal/favorites"
 	"github.com/messenger91/sql-tui/internal/query"
 	"github.com/messenger91/sql-tui/internal/result"
+	"github.com/messenger91/sql-tui/internal/schema"
 	"github.com/messenger91/sql-tui/internal/styles"
 	"github.com/messenger91/sql-tui/internal/workspace"
 )
@@ -57,6 +58,7 @@ type Model struct {
 	query     query.Model
 	results   result.Model
 	favorites favorites.Model
+	schema    *schema.Cache
 	clipboard export.Clipboard
 
 	focus         Focus
@@ -67,8 +69,7 @@ type Model struct {
 	noticeSeq     int
 
 	active       *db.Connection
-	schema       []db.TableMeta
-	schemaErr    error
+	schemaLoad   bool
 	lastQueryErr error
 }
 
@@ -97,6 +98,7 @@ func NewWithConfig(cfg Config) Model {
 		query:     query.New(),
 		results:   result.New(),
 		favorites: favorites.New(favoriteStore),
+		schema:    schema.NewCache(),
 		clipboard: clipboard,
 		focus:     FocusWorkspace,
 	}
@@ -140,18 +142,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.focus = FocusQuery
 		m.workspace.ActivationSucceeded(connection.ID)
 		m.syncFocus()
-		return m, m.loadSchema(connection)
+		cmd := m.refreshSchema(connection)
+		return m, cmd
 	case workspace.DeactivatedMsg:
 		m.active = nil
-		m.schema = nil
-		m.schemaErr = nil
+		m.schemaLoad = false
 		return m, nil
 	case schemaLoadedMsg:
-		if m.active == nil || m.active.ID != msg.ConnectionID {
-			return m, nil
+		m.schema.Store(msg.ConnectionID, msg.Tables, msg.Err)
+		if m.active != nil && m.active.ID == msg.ConnectionID {
+			m.schemaLoad = false
 		}
-		m.schema = msg.Tables
-		m.schemaErr = msg.Err
 		return m, nil
 	case query.ExecuteRequestedMsg:
 		m.clearNotice()
@@ -405,6 +406,13 @@ type schemaLoadedMsg struct {
 	Err          error
 }
 
+// refreshSchema starts an async schema reload and marks the status as loading.
+// It is used on connection activation and by the schema browser (§10.2).
+func (m *Model) refreshSchema(connection db.Connection) tea.Cmd {
+	m.schemaLoad = true
+	return m.loadSchema(connection)
+}
+
 func (m Model) loadSchema(connection db.Connection) tea.Cmd {
 	manager := m.manager
 	return func() tea.Msg {
@@ -461,9 +469,21 @@ func (m Model) statusLine(lay layout) string {
 	parts := []string{"sql-tui", "focus: " + m.focus.String()}
 	if m.active != nil {
 		parts = append(parts, "conn: "+m.active.Name)
-	}
-	if len(m.schema) > 0 {
-		parts = append(parts, fmt.Sprintf("schema: %d objects", len(m.schema)))
+		switch {
+		case m.schemaLoad:
+			parts = append(parts, "schema: loading…")
+		default:
+			if entry, ok := m.schema.Get(m.active.ID); ok {
+				switch {
+				case len(entry.Tables) > 0 && entry.Err != nil:
+					parts = append(parts, "schema: "+objectsLabel(len(entry.Tables))+" (partial)")
+				case len(entry.Tables) > 0:
+					parts = append(parts, "schema: "+objectsLabel(len(entry.Tables)))
+				case entry.Err != nil:
+					parts = append(parts, "schema: unavailable")
+				}
+			}
+		}
 	}
 	parts = append(parts, fmt.Sprintf("%d×%d", lay.width, lay.height))
 	line := strings.Join(parts, " · ")
@@ -501,6 +521,13 @@ func truncate(text string, width int) string {
 		return text
 	}
 	return ansi.Truncate(text, width, "…")
+}
+
+func objectsLabel(count int) string {
+	if count == 1 {
+		return "1 object"
+	}
+	return fmt.Sprintf("%d objects", count)
 }
 
 type layout struct {

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -210,22 +211,59 @@ func TestActivationFocusesQueryAndLoadsSchema(t *testing.T) {
 	}
 }
 
-func TestSchemaResultOnlyAppliesToActiveConnection(t *testing.T) {
+func TestSchemaResultStoredPerConnection(t *testing.T) {
 	m := newSized(t, 80, 24)
 	connection := db.Connection{ID: "c1", Name: "local", Driver: db.DriverSQLite, DSN: ":memory:"}
 	updated, _ := m.Update(workspace.ActivatedMsg{Connection: connection})
 	m = updated.(Model)
 
-	updated, _ = m.Update(schemaLoadedMsg{ConnectionID: "c1", Tables: []db.TableMeta{{Name: "users"}}})
-	m = updated.(Model)
-	if len(m.schema) != 1 || m.schema[0].Name != "users" {
-		t.Fatalf("schema = %+v", m.schema)
+	if !m.schemaLoad {
+		t.Fatal("schema load flag not set on activation")
+	}
+	if !strings.Contains(ansi.Strip(m.View()), "schema: loading…") {
+		t.Fatalf("status missing loading state:\n%s", m.View())
 	}
 
-	updated, _ = m.Update(schemaLoadedMsg{ConnectionID: "stale", Tables: []db.TableMeta{{Name: "other"}}})
+	updated, _ = m.Update(schemaLoadedMsg{ConnectionID: "c1", Tables: []db.TableMeta{{Name: "users"}}})
 	m = updated.(Model)
-	if len(m.schema) != 1 || m.schema[0].Name != "users" {
-		t.Fatalf("stale schema overwrote the active connection: %+v", m.schema)
+	if m.schemaLoad {
+		t.Fatal("schema load flag not cleared")
+	}
+	entry, ok := m.schema.Get("c1")
+	if !ok || len(entry.Tables) != 1 || entry.Tables[0].Name != "users" {
+		t.Fatalf("entry = %+v", entry)
+	}
+
+	updated, _ = m.Update(schemaLoadedMsg{ConnectionID: "other", Tables: []db.TableMeta{{Name: "other"}}})
+	m = updated.(Model)
+	if entry, ok := m.schema.Get("other"); !ok || len(entry.Tables) != 1 {
+		t.Fatal("schema for a non-active connection was not cached")
+	}
+	if entry, _ := m.schema.Get("c1"); len(entry.Tables) != 1 || entry.Tables[0].Name != "users" {
+		t.Fatalf("active schema changed: %+v", entry)
+	}
+}
+
+func TestSchemaPartialFailureStatus(t *testing.T) {
+	m := newSized(t, 80, 24)
+	connection := db.Connection{ID: "c1", Name: "local", Driver: db.DriverSQLite, DSN: ":memory:"}
+	updated, _ := m.Update(workspace.ActivatedMsg{Connection: connection})
+	m = updated.(Model)
+
+	updated, _ = m.Update(schemaLoadedMsg{
+		ConnectionID: "c1",
+		Tables:       []db.TableMeta{{Name: "users"}},
+		Err:          errors.New("permission denied"),
+	})
+	m = updated.(Model)
+	if !strings.Contains(ansi.Strip(m.View()), "schema: 1 object (partial)") {
+		t.Fatalf("status missing partial warning:\n%s", m.View())
+	}
+
+	updated, _ = m.Update(schemaLoadedMsg{ConnectionID: "c1", Err: errors.New("permission denied")})
+	m = updated.(Model)
+	if !strings.Contains(ansi.Strip(m.View()), "schema: unavailable") {
+		t.Fatalf("status missing unavailable state:\n%s", m.View())
 	}
 }
 
@@ -234,11 +272,19 @@ func TestDeactivationClearsActiveConnection(t *testing.T) {
 	connection := db.Connection{ID: "c1", Name: "local", Driver: db.DriverSQLite, DSN: ":memory:"}
 	updated, _ := m.Update(workspace.ActivatedMsg{Connection: connection})
 	m = updated.(Model)
+	updated, _ = m.Update(schemaLoadedMsg{ConnectionID: "c1", Tables: []db.TableMeta{{Name: "users"}}})
+	m = updated.(Model)
 
 	updated, _ = m.Update(workspace.DeactivatedMsg{})
 	m = updated.(Model)
-	if m.active != nil || m.schema != nil {
-		t.Fatalf("active=%+v schema=%+v", m.active, m.schema)
+	if m.active != nil || m.schemaLoad {
+		t.Fatalf("active=%+v loading=%v", m.active, m.schemaLoad)
+	}
+	if _, ok := m.schema.Get("c1"); !ok {
+		t.Fatal("schema cache should survive deactivation")
+	}
+	if strings.Contains(ansi.Strip(m.View()), "conn:") {
+		t.Fatalf("status still shows a connection:\n%s", m.View())
 	}
 }
 
