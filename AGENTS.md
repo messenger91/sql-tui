@@ -2,7 +2,7 @@
 
 ## Current state
 
-Completed: §0–§9 — bootstrap, `internal/db` (SQLite, MySQL, and Postgres: connect, execute, schema), root TUI shell, workspace pane, query editor, table/CSV/JSON result views, view toggle, and export to file or clipboard. **M3, M4, and M5 are complete; §10 is complete.** Next: M7 (§11 multi-tab async sessions) — start with the required design note before coding. `TODO.md` is authoritative for what is implemented.
+Completed: §0–§9 — bootstrap, `internal/db` (SQLite, MySQL, and Postgres: connect, execute, schema), root TUI shell, workspace pane, query editor, table/CSV/JSON result views, view toggle, and export to file or clipboard. **M3, M4, and M5 are complete; §10 is complete; §11.1 is complete.** Next: §11.2 tab bar and root-model session wiring. `TODO.md` is authoritative for what is implemented.
 
 ## Source of truth
 
@@ -49,6 +49,13 @@ These are easy to violate when writing the first implementation:
 - Activation is message-based: workspace emits `ActivatedMsg`; the root model focuses the query pane, calls `workspace.ActivationSucceeded` (which also clears the `connecting…` spinner), and starts an async `db.LoadSchema`. Editing the active connection re-emits `ActivatedMsg` so the schema is reloaded. If a new activation message is ever added, clear `busy` there too or the spinner runs forever.
 - DSNs are masked in the list (`maskDSN`), but the form and the on-disk JSON keep them plaintext.
 - `main` must call `model.Close()` after `tea.NewProgram(...).Run()`; the manager is a pointer inside a copied model, so closing there releases all handles.
+
+## Session gotchas
+
+- `session.Session` owns a **per-session** `query.Model` and `result.Model`; there is no shared editor buffer. Do not add global query/result state to the root model — read from the active session.
+- `session.Manager` is not internally locked: mutate it only from the root model's update loop. Runners communicate by messages and must never touch it directly.
+- `Close` cancels a running session and picks the neighbouring tab as active; the caller must create a replacement tab when the last one closes (§11.2).
+- Titles come from `DeriveTitle`: leading `--`/`/* */` comments skipped, whitespace collapsed, 23 runes + `…` max.
 
 ## Autocomplete gotchas
 

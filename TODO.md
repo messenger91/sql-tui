@@ -234,12 +234,14 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 **Why it's high effort**: replaces the single-`tea.Cmd` execution model with a session manager that runs N concurrent queries, routes messages back into the right tab, supports per-tab cancellation, and streams rows incrementally without blocking the UI or leaking goroutines.
 
 ### 11.1 Session model
-- [ ] `internal/session`: `Session` struct holds:
+- [x] `internal/session`: `Session` struct holds:
   - `ID`, `ConnectionID`, `Title` (derived from first meaningful token of the query, e.g., `SELECT users …`),
   - editor buffer + cursor, current `QueryResult` (or streaming buffer),
   - `State` (`idle` | `running` | `done` | `cancelled` | `error`),
   - per-format scroll positions, pending cell edits (§12).
-- [ ] `SessionManager` in the root model: `map[SessionID]*Session`, ordered list for tab display, focus tracking.
+  - Implemented with per-session `query.Model`/`result.Model` (buffer, cursor, raw result, scroll); cancel func and timestamps included. Pending-edit state is added with §12.
+- [x] `SessionManager` in the root model: `map[SessionID]*Session`, ordered list for tab display, focus tracking.
+  - `session.Manager` implemented and tested (`New`/`Get`/`Active`/`SetActive`/`Sessions`/`Close`/`Next`/`Prev`). Root-model wiring lands with the tab bar in §11.2.
 
 ### 11.2 Tab bar
 - [ ] Tab bar rendered above the query editor: `│ 1: SELECT users … │ 2: ● UPDATE orders … │ +`.
