@@ -2,7 +2,7 @@
 
 ## Current state
 
-Completed: all planned sections plus every follow-up batch — bootstrap, `internal/db` (SQLite/MySQL/Postgres connect/execute/schema/URL DSNs), root shell, workspace, query editor (highlight), result views (JSON highlight, column layout, stats), export (CSV/JSON/Markdown), favorites, persistent history, schema browser + autocomplete, multi-tab async streaming, inline editing with transactional apply and in-place refresh, table info + DBML, command menu, help modal, and mouse support. The only unchecked TODO items are keyring storage, Parquet export, and virtualized >100k tables — all blocked on dependency/product decisions.
+Completed: all planned sections plus every follow-up batch — bootstrap, `internal/db` (SQLite/MySQL/Postgres connect/execute/schema/URL DSNs), root shell, Explorer, query editor (SQL highlight, Vim Insert/Normal modes), results (hand-rolled virtualized table, sorting, current-column highlight, JSON highlight, column layout, stats), export (CSV/JSON/Markdown), favorites, persistent history, schema browser + autocomplete, multi-tab async streaming, inline editing with transactional apply and in-place refresh, table info + DBML, command menu, help modal, pane hotkeys, and mouse support (focus, tab bar, header sorting, Explorer table expansion). The only unchecked TODO items are keyring storage and Parquet export — both blocked on new dependencies.
 
 ## Source of truth
 
@@ -60,11 +60,12 @@ These are easy to violate when writing the first implementation:
 - NULLs always sort last in both directions; numeric comparisons are type-aware (ints before floats) and mixed types fall back to the formatted text.
 - Post-apply replay must not re-sort per mutation (indexes would shift). `handleApplyDone` replays every mutation, then calls `Results.Resort()` once. `ApplyDoneMsg.Order` carries `OrderVersion`; a re-sort (or new result) during the transaction disables the in-place refresh and falls back to re-running the query.
 
-## Virtualized table gotchas
+## Results renderer gotchas
 
-- `result.Model` runs two renderers: bubbles/table below `virtualThreshold` (5,000 rows) and a hand-rolled window renderer above it (`virtualView`). Keep both behaviors in sync when touching columns, pending markers, or in-place mutations.
-- Virtual mode keeps raw rows in memory but formats rows on demand (`cachedRow`, bounded by `virtualCacheLimit`); the row cache and `widthsCache` (sampled from `virtualSampleRows` rows) are invalidated by `invalidateRowCache` — call it after ANY change to rows, pending markers, hidden columns, or widths.
-- Virtual navigation keys live in `virtualUpdate` (handled before the table path); `SelectedCell`/`selectedRow` abstract the cursor for both modes.
+- `result.Model` renders the table itself for every size (`tableView` in `table.go`); bubbles/table is no longer used. `virtual` only switches width sampling (`virtualSampleRows`), the row window, and the `row N of M` position line above `virtualThreshold` (5,000 rows).
+- The cursor is `result.Model.cursor` (not a table cursor); `SelectedCell`/`selectedRow` expose it and row navigation lives in `tableUpdate`. All row windows are computed from `visibleRows()`.
+- Rows are formatted on demand (`cachedRow`). The small path formats every row for width measurement (bounded by the threshold); virtual mode samples. `invalidateRowCache` drops both `rowCache` and `widthsCache`/`columnWidths` — call it after ANY change to rows, pending markers, hidden columns, widths, or sort state.
+- The current cell column is highlighted across the whole table (cyan/underlined header, cyan bold cell background) via `cellStyle`; the header click hit-test uses `columnWidths` and assumes one space of padding per cell side.
 - `internal/settings` owns `settings.json` (`max_rows`, clamped 100–1,000,000); the app loads it async on Init and `effectiveMaxRows()` feeds `session.Run`. Settings failures keep the defaults. Do not hardcode `db.DefaultMaxRows` in the app — use `effectiveMaxRows()`.
 
 ## Table info / DBML gotchas
@@ -77,9 +78,11 @@ These are easy to violate when writing the first implementation:
 ## UI gotchas (post-spec batch)
 
 - The query editor is *rendered* by `query.Model.renderEditor` (highlight + block caret); the textarea only owns input/scroll state. Anything that reads editor output must use `EditorView()`, and `renderLines` clips to `m.width`.
-- The workspace has a second `bubbles/list` for tables (`tables`); `SetSize` must size BOTH lists, and `SetTables` is fed from `schemaLoadedMsg`. `t` toggles it, `enter` emits `workspace.FetchTableMsg` (root runs `SELECT * FROM <quoted> LIMIT 100` via the shared `executeSQL` path).
-- `x` is the command menu (outside the editor); `E` is explain (results pane). Item run funcs are `func(*Model) tea.Cmd` and `handleCommandMenuKey` returns `m, cmd` after running — never return a `*Model` from those helpers or appUpdate's type assertion breaks.
-- Help is a modal (`helpOpen`); `?` opens it outside the editor. `helpText()` is static — update it when bindings change.
+- The Explorer (pane title `Explorer`) has a second `bubbles/list` for tables (`tables`); `SetSize` must size BOTH lists, and `SetTables` is fed from `schemaLoadedMsg`. `t` toggles it, `enter` emits `workspace.FetchTableMsg` (root runs `SELECT * FROM <quoted> LIMIT 100` via the shared `executeSQL` path).
+- Mouse clicks inside the Explorer are routed to `workspace.ClickItem` (content y = `msg.Y-2`): clicking a table fetches it; clicking the active connection toggles its table list. `clickIndex` relies on the list strides (connections 3 lines, tables 2) and pagination bounds; clicking empty space or beyond the last item is ignored. `workspace.Filtering()` must stay accurate so `E`/`Q`/`R` do not steal filter runes.
+- `x` is the command menu (outside the editor); `X` is explain (results pane). Item run funcs are `func(*Model) tea.Cmd` and `handleCommandMenuKey` returns `m, cmd` after running — never return a `*Model` from those helpers or appUpdate's type assertion breaks.
+- Pane hotkeys `E`/`Q`/`R` are handled in `app.handleKey` via `paneHotkeysActive()`: they are suppressed while typing in the editor (Insert mode) and while an Explorer list filter is active. In Vim Normal mode they navigate panes; explain was moved to `X` to free `E`.
+- Help is a modal (`helpOpen`); `?` opens it outside the editor and in Vim Normal mode. `helpText()` is static — update it when bindings change.
 - `export.ResultStats` is the single formatter for `rows · speed · elapsed`; the runner tracks drained rows in `Event.Fetched` and `result.Model.UpdateStats` applies them on done.
 
 ## Stretch-feature gotchas
@@ -87,9 +90,9 @@ These are easy to violate when writing the first implementation:
 - `db.ParseDSN` normalizes URL-style DSNs before `sql.Open`; `Connection.DSN` stays as entered for display, so `maskDSN` still sees URLs. Postgres URLs without `sslmode` get `sslmode=prefer` (psql behavior: SSL when available, plaintext fallback); an explicit `sslmode` is never overridden.
 - `Connection.Options["schema"]` is applied after ping (`SET search_path` / `USE`); SQLite rejects it. The connection form exposes it as the optional `Schema` field.
 - `history.json` is loaded asynchronously on `Init` and seeded into every session editor; `recordHistory` only runs when a query actually starts. New tabs are seeded explicitly in `focusSessionForConnection`/`newTab`/`closeSession`.
-- `x` explains the first statement via `db.Explain`; SQLite trees are built from `id/parent/detail`, everything else renders text rows. Plans open in the generic modal and are height-clipped.
+- `X` explains the first statement via `db.Explain`; SQLite trees are built from `id/parent/detail`, everything else renders text rows. Plans open in the generic modal and are height-clipped.
 - Markdown export lives in `internal/export/markdown.go` and is part of `Serialize`/`WriteFile`; the dialog cycle is CSV → JSON → Markdown.
-- Table layout keys live in `result.Model.Update`: `H` toggles hide, `[`/`]` resize, `0` resets. Hidden/resized columns persist by lowercased column name across view switches and matching results. Rebuild clears rows before changing columns to avoid a bubbles/table panic.
+- Table layout keys live in `result.Model.Update`: `H` toggles hide, `[`/`]` resize, `0` resets. Hidden/resized columns persist by lowercased column name across view switches and matching results.
 - Adding keyring or Parquet support requires new dependencies — do not add them without explicit approval.
 
 ## DML / preview gotchas
@@ -199,13 +202,14 @@ These are easy to violate when writing the first implementation:
 - CSV/JSON views render through a `bubbles/viewport` and are switched with `SetFormat`/`CycleFormat`. Long lines are clipped by the viewport (no horizontal scroll).
 - JSON uses an ordered-object marshaler (`internal/export/json.go`) because `map[string]any` would sort keys. Numbers/bools stay JSON-native; blobs and times become strings; duplicate column names are preserved.
 - Values are stringified once by `FormatValue`: `NULL`, RFC3339 time, `0x…` for binary blobs, printable `[]byte` as text, and newlines/tabs escaped so rows stay one line (this also keeps CSV records single-line).
-- Column widths are natural but capped (3–40) and shrunk to fit the pane; cells are ellipsized by `bubbles/table`. There is no horizontal scrolling, by design.
-- `SetResult` must rebuild the table **before** `SetCursor(0)`: the table clamps the cursor against the current row count, so setting it first leaves the cursor at -1.
-- `bubbles/table` applies styles per row, not per cell. Proper NULL dimming would require ANSI inside cell values (which breaks width math) — deferred to §13.
-- `AppendRows` keeps the cursor and updates `RowCount`; use it for §11 streaming instead of calling `SetResult` per batch.
+- Column widths are natural but capped (3–40) and shrunk to fit the pane; cells are ellipsized by the hand renderer, and the body is padded to `m.width` so layout lines stay aligned. There is no horizontal scrolling, by design.
+- `tableView` renders per cell, so column/cell styles are possible (the active column highlight uses this); keep `padCell` + per-cell `Padding(0,1)` invariants when touching widths or `ColumnAt`.
+- `AppendRows` keeps the cursor and updates `RowCount`, following the bottom only when the cursor was already there; use it for §11 streaming instead of calling `SetResult` per batch.
 
 ## Query gotchas
 
+- The editor is Vim-style: `ModeInsert` (default) / `ModeNormal`. `esc` enters Normal, `i`/`a`/`I`/`A`/`o`/`O` return to Insert; Normal supports `h j k l`, `0 $`, `w b`, `gg G`, `x`, `dd`. Normal mode intercepts keys before the textarea, so runes must not be forwarded there. `SetSQL`/`InsertText` force Insert mode. The pane title renders `Query · INSERT/NORMAL`.
+- Autocomplete runs only in Insert mode (`scheduleSuggest`/`suggestTickMsg` guard on `mode`).
 - The editor never touches the database. `ctrl+r`/`F5` emits `query.ExecuteRequestedMsg`; the root model runs `SplitStatements` and `db.Execute` for each statement, then sends `queryFinishedMsg` or `queryFailedMsg`. Keep execution out of `internal/query` so §11 can replace it with sessions.
 - `SplitStatements` is the shared lightweight scanner: it understands quotes, doubled quotes, backslash escapes, `--`/`/* */` comments, and `$$`/`$tag$` blocks. §10/§12 must reuse or extend it rather than adding a second parser.
 - Multi-statement runs are sequential and only the **last** result set is shown; the count is reported in the query status. An error aborts the batch with `statement N:` context.

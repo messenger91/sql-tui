@@ -14,9 +14,9 @@ func TestExplainOpensPlanModal(t *testing.T) {
 	m.focus = FocusResult
 	m.activeSession().Results.Focus()
 
-	m, cmd := appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'E'}})
+	m, cmd := appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'X'}})
 	if cmd == nil {
-		t.Fatal("x produced no explain command")
+		t.Fatal("X produced no explain command")
 	}
 	msg, ok := cmd().(explainDoneMsg)
 	if !ok {
@@ -40,7 +40,7 @@ func TestExplainRequiresSQL(t *testing.T) {
 	m.focus = FocusResult
 	m.activeSession().Editor.SetSQL("   ")
 
-	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'E'}})
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'X'}})
 	if m.modal != nil {
 		t.Fatal("modal opened without SQL")
 	}

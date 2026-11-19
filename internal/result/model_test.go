@@ -133,12 +133,12 @@ func TestRowNavigation(t *testing.T) {
 	m.Focus()
 
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	if row := m.table.SelectedRow(); row == nil || row[1] != "NULL" {
-		t.Fatalf("selected row = %v", row)
+	if row, _, _, ok := m.SelectedCell(); !ok || row != 1 {
+		t.Fatalf("selected row = %d ok=%v", row, ok)
 	}
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
-	if row := m.table.SelectedRow(); row == nil || row[1] != "ada" {
-		t.Fatalf("selected row = %v", row)
+	if row, _, _, ok := m.SelectedCell(); !ok || row != 0 {
+		t.Fatalf("selected row = %d ok=%v", row, ok)
 	}
 }
 
@@ -247,13 +247,13 @@ func TestAppendRowsFollowsBottomOnly(t *testing.T) {
 
 	// Cursor starts at the top (SetResult), so appends must not move it.
 	m.AppendRows([][]any{{int64(20)}})
-	if m.table.Cursor() != 0 {
-		t.Fatalf("cursor moved while at top: %d", m.table.Cursor())
+	if m.cursor != 0 {
+		t.Fatalf("cursor moved while at top: %d", m.cursor)
 	}
 
-	m.table.SetCursor(len(m.table.Rows()) - 1)
+	m.cursor = len(m.result.Rows) - 1
 	m.AppendRows([][]any{{int64(21)}})
-	if got := m.table.Cursor(); got != len(m.table.Rows())-1 {
+	if got := m.cursor; got != len(m.result.Rows)-1 {
 		t.Fatalf("cursor did not follow bottom: %d", got)
 	}
 }
@@ -363,7 +363,7 @@ func TestCycleFormatResetsScroll(t *testing.T) {
 
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	if m.table.Cursor() == 0 {
+	if m.cursor == 0 {
 		t.Fatal("table cursor did not move")
 	}
 
@@ -374,8 +374,8 @@ func TestCycleFormatResetsScroll(t *testing.T) {
 		t.Fatalf("viewport offset = %d after switch", m.viewport.YOffset)
 	}
 	m.CycleFormat() // table
-	if m.table.Cursor() != 0 {
-		t.Fatalf("table cursor = %d after switch", m.table.Cursor())
+	if m.cursor != 0 {
+		t.Fatalf("table cursor = %d after switch", m.cursor)
 	}
 }
 
@@ -386,9 +386,9 @@ func TestHideColumn(t *testing.T) {
 	m.Focus()
 
 	m.ToggleColumnHidden()
-	columns := m.table.Columns()
-	if len(columns) != 1 || columns[0].Title != "name" {
-		t.Fatalf("columns = %+v", columns)
+	visible := m.visibleColumns()
+	if len(visible) != 1 || m.result.Columns[visible[0]] != "name" {
+		t.Fatalf("visible columns = %v", visible)
 	}
 	view := ansi.Strip(m.View())
 	if !strings.Contains(view, "name") {
@@ -419,17 +419,17 @@ func TestResizeColumn(t *testing.T) {
 		RowCount: 1,
 	})
 
-	before := m.table.Columns()[0].Width
+	before := m.columnWidths[0]
 	m.ResizeColumn(2)
-	if got := m.table.Columns()[0].Width; got != before+2 {
+	if got := m.columnWidths[0]; got != before+2 {
 		t.Fatalf("width = %d, want %d", got, before+2)
 	}
 	m.ResizeColumn(-4)
-	if got := m.table.Columns()[0].Width; got >= before+2 {
+	if got := m.columnWidths[0]; got >= before+2 {
 		t.Fatalf("width did not shrink: %d", got)
 	}
 	m.ResetColumnLayout()
-	if got := m.table.Columns()[0].Width; got != before {
+	if got := m.columnWidths[0]; got != before {
 		t.Fatalf("reset width = %d, want %d", got, before)
 	}
 }
@@ -450,5 +450,34 @@ func TestColumnLayoutPersistsAcrossFormats(t *testing.T) {
 	m.SetResult(sampleResult())
 	if got := m.hiddenCount(); got != 1 {
 		t.Fatalf("hidden after new result = %d", got)
+	}
+}
+
+func TestActiveColumnHighlight(t *testing.T) {
+	m := New()
+	m.SetSize(60, 10)
+	m.SetResult(sampleResult())
+
+	view := m.View()
+	header := tableHeaderActiveStyle.Render(padCell("id", m.columnWidths[0]))
+	if !strings.Contains(view, header) {
+		t.Fatalf("active column header is not highlighted:\n%q", view)
+	}
+
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	view = m.View()
+	header = tableHeaderActiveStyle.Render(padCell("name", m.columnWidths[1]))
+	if !strings.Contains(view, header) {
+		t.Fatalf("active column highlight did not move:\n%q", view)
+	}
+
+	active := m.cellStyle(true, false)
+	normal := m.cellStyle(false, false)
+	if active.GetForeground() == normal.GetForeground() || active.GetBackground() == normal.GetBackground() {
+		t.Fatal("active column cells are not visually distinct")
+	}
+	selectedActive := m.cellStyle(true, true)
+	if selectedActive.GetBackground() == active.GetBackground() {
+		t.Fatal("selected-row active cell keeps the plain active background")
 	}
 }

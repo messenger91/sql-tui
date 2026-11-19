@@ -65,8 +65,8 @@ func defaultKeyMap() keyMap {
 			key.WithHelp("ctrl+b", "schema"),
 		),
 		Explain: key.NewBinding(
-			key.WithKeys("E"),
-			key.WithHelp("E", "explain"),
+			key.WithKeys("X"),
+			key.WithHelp("X", "explain"),
 		),
 		Command: key.NewBinding(
 			key.WithKeys("x"),

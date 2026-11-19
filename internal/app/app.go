@@ -634,6 +634,25 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.paneHotkeysActive() {
+		switch msg.String() {
+		case "E":
+			if m.wsHidden {
+				return m, nil
+			}
+			m.focus = FocusWorkspace
+			m.syncFocus()
+			return m, nil
+		case "Q":
+			m.focus = FocusQuery
+			m.syncFocus()
+			return m, nil
+		case "R":
+			m.focus = FocusResult
+			m.syncFocus()
+			return m, nil
+		}
+	}
 	if msg.String() == "esc" {
 		if s := m.activeSession(); s != nil && s.Running() {
 			m.cancelSession(s)
@@ -674,7 +693,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.skipHiddenWorkspace(false)
 		m.syncFocus()
 		return m, nil
-	case key.Matches(msg, m.keys.Help) && m.focus != FocusQuery:
+	case key.Matches(msg, m.keys.Help) && (m.focus != FocusQuery || m.editorNormalMode()):
 		m.helpOpen = true
 		return m, nil
 	case key.Matches(msg, m.keys.NewTab):
@@ -1063,12 +1082,16 @@ func (m Model) View() string {
 		resultsContent = "no results yet"
 	}
 
-	queryView := m.pane("Query", queryContent, lay.rightW, lay.queryH, m.focus == FocusQuery)
+	queryTitle := "Query"
+	if s := m.activeSession(); s != nil {
+		queryTitle += " · " + s.Editor.ModeLabel()
+	}
+	queryView := m.pane(queryTitle, queryContent, lay.rightW, lay.queryH, m.focus == FocusQuery)
 	results := m.pane("Results", resultsContent, lay.rightW, lay.resultH, m.focus == FocusResult)
 
 	panes := []string{lipgloss.JoinVertical(lipgloss.Left, queryView, results)}
 	if lay.workspaceW > 0 {
-		workspaceView := m.pane("Connections", m.workspace.View(), lay.workspaceW, lay.bodyH, m.focus == FocusWorkspace)
+		workspaceView := m.pane("Explorer", m.workspace.View(), lay.workspaceW, lay.bodyH, m.focus == FocusWorkspace)
 		panes = []string{workspaceView, panes[0]}
 	}
 	body := lipgloss.JoinHorizontal(lipgloss.Top, panes...)

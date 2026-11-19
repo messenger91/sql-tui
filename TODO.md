@@ -128,7 +128,7 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
   - Support vertical scrolling and cursor row navigation.
 - [x] Render a status line: `N rows · 123ms · table view`.
 - [x] **Width handling**: compute column widths from content but cap total width; horizontal scroll via `viewport` if the table exceeds pane width (or use table's built-in horizontal scroll if available). (Widths are shrunk proportionally to fit; no horizontal scrolling needed.)
-- [ ] **NULL / type styling**: style `NULL` dim; style numeric/boolean distinctly (optional Lip Gloss). (Values render correctly, but `bubbles/table` cannot style individual cells without injecting ANSI into values; left for §13 polish.)
+- [ ] **NULL / type styling**: style `NULL` dim; style numeric/boolean distinctly (optional Lip Gloss). (Values render correctly. The hand-rolled table renderer can style per cell since the virtualization batch; NULL dimming remains optional polish.)
 - [x] **Streaming append hook** (§11): table must support appending rows incrementally from `rowsAppendedMsg` without full re-render flicker. (`result.Model.AppendRows` appends raw + formatted rows and preserves the cursor.)
 
 ### 6.2 CSV view
@@ -298,7 +298,7 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 ### 12.2 Cell editing UX
 - [x] In the table view, `e`/`enter` on the focused cell opens a `textinput` editor overlay pre-filled with the current value; `ctrl+n` toggles `NULL` (only if the column is nullable). (Cell cursor moves with `←/→`; row with `↑/↓`.)
 - [x] Type-aware validation using `ColumnMeta.Type`: integers, numerics, booleans (`t/f/true/false/1/0`), timestamps (ISO-8601 parse with clear error), text (as-is).
-- [ ] Visual diff state: edited cells rendered with a yellow background; `NULL` rendered dim. (Approved deviation: `bubbles/table` cannot style cells, so pending rows get a leading `* ` marker and the status shows `N pending`; the preview list arrives in §12.3.)
+- [ ] Visual diff state: edited cells rendered with a yellow background; `NULL` rendered dim. (Approved deviation: pending rows get a leading `* ` marker and the status shows `N pending`; per-cell styling is now possible with the hand-rolled renderer, but the marker design is kept for now. The preview list arrives in §12.3.)
 - [x] `esc` cancels the cell edit; `ctrl+z` on a row reverts all pending edits for that row; `ctrl+shift+z` reverts all pending edits in the result.
 - [x] Row-level actions (menu via `m`): `Set cell to NULL`, `Duplicate row` (INSERT), `Delete row` (DELETE) — each becomes a pending change, not an immediate DB write.
 
@@ -333,7 +333,7 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 
 - [x] Define Lip Gloss theme in `internal/styles`: pane borders, focused vs blurred, header, status bar, error text, tab bar (active/inactive/running), pending-edit cell highlight, autocomplete popup. (Theme covers panes/status/help/modal/dim/error; tab bar and cell markers use inline styles because they are app-specific.)
 - [x] Responsive layout: workspace pane fixed width (e.g., 30 cols), query and result split remaining height; collapse workspace to a tab in narrow terminals (<80 cols) if feasible. (Progressive 2/5-width collapse; hidden entirely below 25 columns and pane focus skips it.)
-- [x] Mouse support (optional): enable `tea.WithMouseCellMotion` for list/table/tab scrolling. (Click-to-focus panes, tab-bar clicks incl. `+` new tab; lists/tables/viewport scroll natively on wheel.)
+- [x] Mouse support (optional): enable `tea.WithMouseCellMotion` for list/table/tab scrolling. (Click-to-focus panes, tab-bar clicks incl. `+` new tab, results header sorting, and Explorer connection/table clicks.)
 - [x] Error dialog: render `err.Error()` with `viewport` wrapping and `esc` to dismiss. (Modal bodies wrap and are clipped to the screen height; `esc` dismisses. Not a scrollable viewport.)
 - [x] Graceful shutdown: cancel all running sessions (§11), wait, `db.CloseAll()`, save any dirty state.
 
@@ -365,12 +365,17 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 - [x] SQL syntax highlighting with a block caret in the editor.
 - [x] JSON result-view syntax highlighting.
 - [x] Fetch speed and total fetched rows in the result status line.
-- [x] Bulk command menu on `x` (add/edit/delete/connect, favorites, tabs, export, schema, quit); `E` explains.
+- [x] Bulk command menu on `x` (add/edit/delete/connect, favorites, tabs, export, schema, quit); `X` explains.
 - [x] App version in the status bar and `--version`/`version` flag.
 - [x] Full TUI smoke test pass (dropdown fetch, help/command menus, highlight, JSON view, stats).
 - [x] Table info viewer (`i` in the table dropdown): Columns, Foreign Keys, Indexes, Constraints, DDL per driver (SQLite real DDL; MySQL SHOW CREATE; Postgres reconstructed + view definitions).
 - [x] Visual DBML per connection (`D` in the workspace, also in the `x` menu): dbdiagram.io-style output with `[pk]`/`not null` settings, refs, and views as comments.
 - [x] Full-screen scrollable document viewer for table info/DBML with resize handling.
+- [x] Rename the Connections pane to Explorer throughout the UI and docs.
+- [x] Pane hotkeys `E` / `Q` / `R` (Explorer / Query / Results), suppressed while typing in Insert mode or filtering a list; EXPLAIN moved to `X`.
+- [x] Highlight the current cell column in the results table (accent header + cyan column cells), in both the normal and virtualized renderers.
+- [x] Vim-style query editor: Insert/Normal modes with `esc`, `i/a/I/A/o/O`, `h j k l`, `0 $`, `w b`, `gg G`, `x`, `dd`; mode shown in the pane title.
+- [x] Mouse support for the Explorer: click a connection to expand its tables and click a table to fetch it.
 
 ### Stretch
 

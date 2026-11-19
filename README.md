@@ -2,13 +2,13 @@
 
 `sql-tui` is a terminal SQL client built with [Bubble Tea](https://github.com/charmbracelet/bubbletea).
 It connects to **SQLite**, **MySQL**, and **PostgreSQL** and gives you a
-three-pane workflow — connections, query editor, results — plus favorites,
+three-pane workflow — Explorer, query editor, results — plus favorites,
 CSV/JSON export, and three bigger features: schema-aware autocomplete,
 multi-tab async streaming, and inline result editing with a transactional
 apply.
 
 ```
-╭─ Connections ─┬─ Query ────────────────╮
+╭─ Explorer ────┬─ Query · INSERT ───────╮
 │ ● local       │ 1: SELECT * FROM users │
 │   staging     ├────────────────────────┤
 │               │ Results                │
@@ -19,7 +19,7 @@ apply.
 
 ## Features
 
-- **Connections** for SQLite/MySQL/Postgres, persisted to `connections.json`
+- **Explorer** for SQLite/MySQL/Postgres connections, persisted to `connections.json`
   (0600, atomic writes). URL-style DSNs (`mysql://…`, `postgres://…`,
   `sqlite://…`) and native DSNs are both accepted; Postgres URLs default to
   `sslmode=prefer`, so local servers without SSL work while SSL is used when
@@ -31,7 +31,9 @@ apply.
 - **Query editor** with session history (`ctrl+↑/↓`) persisted across restarts
   to `history.json`, SQL syntax highlighting, multi-statement splitting
   (string/comment/dollar-quote aware), and a 50 ms-debounced, schema-aware
-  autocomplete popup (`ctrl+space`). `E` shows the driver query plan.
+  autocomplete popup (`ctrl+space`). `X` shows the driver query plan.
+  Vim-style editing: `esc` enters Normal mode (`i`/`a`/`A`/`o` return to
+  Insert), with `h j k l`, `0 $`, `w b`, `gg G`, `x`, and `dd`.
 - **Schema browser** (`ctrl+b`): expandable table/view/column tree with PK and
   FK hints, fuzzy filter, and identifier insertion at the cursor.
 - **Table info** (`i` in the table dropdown): columns, foreign keys, indexes,
@@ -42,8 +44,8 @@ apply.
   large result sets, an in-memory row cap configurable via
   `settings.json` (`max_rows`, default 10,000, up to 1,000,000), truncation
   markers, Markdown/CSV/JSON export to file or clipboard (`ctrl+e`),
-  column hide/resize (`H`, `[`, `]`, `0`), and sorting by the selected
-  column (`s`, or click a header cell).
+  column hide/resize (`H`, `[`, `]`, `0`), sorting by the selected column
+  (`s`, or click a header cell), and a highlighted current cell column.
 - **Favorites**: named SQL snippets persisted to `favorites.json`
   (`ctrl+s` to save, `ctrl+f` to browse).
 - **Multi-tab sessions**: one editor + result view per tab, executed
@@ -52,7 +54,9 @@ apply.
 - **Inline editing** on writable connections: edit cells (`e`), set NULL
   (`ctrl+n`), duplicate/delete rows (`m`), review generated SQL (`p`), and
   apply everything in one transaction with conflict detection.
-- **Mouse support**: click panes/tabs/`+` to focus, wheel to scroll.
+- **Pane hotkeys**: `E`/`Q`/`R` focus the Explorer, Query, and Results panes.
+- **Mouse support**: click panes/tabs/`+` to focus, click a results header to
+  sort, and expand connection tables by clicking a connection in the Explorer.
 
 ## Install
 
@@ -68,7 +72,7 @@ make build   # -> bin/sql-tui
 ## Quick start
 
 1. Run `sql-tui`.
-2. Press `a` in the Connections pane, pick a driver, enter a DSN, and choose
+2. Press `a` in the Explorer pane, pick a driver, enter a DSN, and choose
    the `Access` field (`read-only`/`writable`) with `←/→`.
 3. Press `enter` to connect. The schema loads in the background.
 4. Type SQL in the query pane and run it with `ctrl+r` (or `F5`).
@@ -90,6 +94,7 @@ DSNs are stored in plaintext locally; passwords are masked in the list UI.
 | Key | Action |
 |---|---|
 | `tab` / `shift+tab` | cycle pane focus |
+| `E` / `Q` / `R` | focus Explorer / Query / Results (not while typing) |
 | `ctrl+t` / `ctrl+w` | new tab / close tab (confirms when running) |
 | `ctrl+→` / `ctrl+←`, `alt+1..9` | switch/jump tabs |
 | `ctrl+r`, `F5` | execute SQL |
@@ -97,24 +102,27 @@ DSNs are stored in plaintext locally; passwords are masked in the list UI.
 | `ctrl+↑` / `ctrl+↓` | query history |
 | `ctrl+b` | schema browser (`ctrl+r` inside refreshes) |
 | `x` | command menu (add/connect/favorites/tabs/export/quit) |
-| `E` | EXPLAIN the current statement (`Query plan` modal) |
-| `t` | table dropdown in the connections pane (`enter` fetches LIMIT 100) |
+| `X` | EXPLAIN the current statement (`Query plan` modal) |
+| `t` / click row | table dropdown in the Explorer (`enter`/click fetches LIMIT 100) |
 | `i` | table info: columns, FKs, indexes, constraints, DDL (in the dropdown) |
 | `D` | view the connection schema as DBML (also in the `x` menu) |
 | `ctrl+s` / `ctrl+f` | save / browse favorites |
 | `v` | cycle table → CSV → JSON (results pane) |
+| `s` / click header | sort by the selected column (repeat to flip) |
 | `ctrl+e` | export CSV/JSON to file or clipboard (results pane) |
 | `e`, `ctrl+n`, `m` | edit cell, set NULL, row menu (results pane) |
 | `p` | preview generated SQL, `enter` applies transactionally |
 | `ctrl+z` / `ctrl+shift+z` | revert row / all pending edits |
 | `H`, `[`, `]`, `0` | hide column, narrow/widen, reset layout (results) |
-| `esc` | cancel running query, close overlay |
+| `esc` | Vim normal mode in the editor, cancel running query, close overlay |
+| `i`, `a`, `A`, `o`, `O` | return to Vim insert mode |
 | `ctrl+c` | cancel the running query, then quit |
 | `?` | toggle help (outside the editor) |
 | `a` / `e` / `d` / `/` | add / edit / delete / filter connections |
 
-Mouse: click a pane to focus it, click a tab (or `+`) in the tab bar, scroll
-lists/tables with the wheel.
+Mouse: click a pane to focus it, click a tab (or `+`) in the tab bar, click a
+results header to sort, click a connection row in the Explorer to expand its
+tables, and click a table to fetch it.
 
 ## Data & settings
 

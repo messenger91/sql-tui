@@ -47,7 +47,7 @@ func TestVirtualNavigation(t *testing.T) {
 	m.SetResult(virtualResult(virtualThreshold + 10))
 
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	if got := m.virtualCursor; got != 1 {
+	if got := m.cursor; got != 1 {
 		t.Fatalf("cursor = %d", got)
 	}
 	if got := m.selectedRow(); got != 1 {
@@ -55,23 +55,23 @@ func TestVirtualNavigation(t *testing.T) {
 	}
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
-	if got := m.virtualCursor; got != 1 {
+	if got := m.cursor; got != 1 {
 		t.Fatalf("cursor after up = %d", got)
 	}
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnd})
-	if got := m.virtualCursor; got != len(m.result.Rows)-1 {
+	if got := m.cursor; got != len(m.result.Rows)-1 {
 		t.Fatalf("end cursor = %d", got)
 	}
-	view := ansi.Strip(m.virtualView())
+	view := ansi.Strip(m.tableView())
 	if !strings.Contains(view, itoaLast(m)) {
 		t.Fatalf("last row not visible:\n%s", view)
 	}
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyHome})
-	if got := m.virtualCursor; got != 0 {
+	if got := m.cursor; got != 0 {
 		t.Fatalf("home cursor = %d", got)
 	}
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
-	if got := m.virtualCursor; got != m.virtualVisibleHeight() {
+	if got := m.cursor; got != m.visibleRows() {
 		t.Fatalf("pgdown cursor = %d", got)
 	}
 }
@@ -87,7 +87,7 @@ func TestVirtualWindowRenders(t *testing.T) {
 	m.Focus()
 
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	view := ansi.Strip(m.virtualView())
+	view := ansi.Strip(m.tableView())
 	for _, want := range []string{"id", "name", "name-b"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view missing %q:\n%s", want, view)
@@ -105,12 +105,12 @@ func TestVirtualCacheBounds(t *testing.T) {
 
 	for i := 0; i < 50; i++ {
 		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
-		_ = m.virtualView()
+		_ = m.tableView()
 	}
 	if len(m.rowCache) > virtualCacheLimit {
 		t.Fatalf("cache size = %d", len(m.rowCache))
 	}
-	if _, ok := m.rowCache[m.virtualCursor]; !ok {
+	if _, ok := m.rowCache[m.cursor]; !ok {
 		t.Fatal("the cursor row is not cached")
 	}
 }
@@ -124,8 +124,8 @@ func TestVirtualPendingMarkerAndStats(t *testing.T) {
 	m.SetResult(res)
 	m.SetPending(map[int]bool{3: true}, 1)
 
-	m.moveVirtualCursor(3)
-	view := ansi.Strip(m.virtualView())
+	m.moveCursor(3)
+	view := ansi.Strip(m.tableView())
 	if !strings.Contains(view, "* 3") {
 		t.Fatalf("pending marker missing:\n%s", view)
 	}
@@ -155,7 +155,7 @@ func TestVirtualInPlaceMutations(t *testing.T) {
 	if got := m.result.Rows[4][0]; got != int64(999) {
 		t.Fatalf("replaced row moved incorrectly: %v", got)
 	}
-	if got := m.virtualCursor; got != 0 {
+	if got := m.cursor; got != 0 {
 		t.Fatalf("cursor = %d", got)
 	}
 
@@ -183,12 +183,34 @@ func TestVirtualHiddenColumnsAndCellCursor(t *testing.T) {
 	if got := m.hiddenCount(); got != 1 {
 		t.Fatalf("hidden = %d", got)
 	}
-	view := ansi.Strip(m.virtualView())
+	view := ansi.Strip(m.tableView())
 	if strings.Contains(view, "name-a") {
 		t.Fatalf("hidden column still rendered:\n%s", view)
 	}
 	m.ResetColumnLayout()
 	if got := m.hiddenCount(); got != 0 {
 		t.Fatalf("hidden after reset = %d", got)
+	}
+}
+
+func TestColumnAtVirtualBeforeRender(t *testing.T) {
+	m := New()
+	m.SetSize(60, 10)
+	res := db.QueryResult{Columns: []string{"id", "name"}}
+	for i := 0; i < virtualThreshold+1; i++ {
+		res.Rows = append(res.Rows, []any{int64(i), "row"})
+	}
+	res.RowCount = len(res.Rows)
+	m.SetResult(res)
+	if !m.virtual {
+		t.Fatal("virtual mode not active")
+	}
+	// No View() call: header hit-testing must still compute widths.
+	if name, ok := m.ColumnAt(0); !ok || name != "id" {
+		t.Fatalf("offset 0 -> %q %v", name, ok)
+	}
+	second := m.columnWidths[0] + 2
+	if name, ok := m.ColumnAt(second); !ok || name != "name" {
+		t.Fatalf("offset %d -> %q %v", second, name, ok)
 	}
 }

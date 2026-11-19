@@ -141,7 +141,7 @@ func TestSortFollowsSelectedRow(t *testing.T) {
 	m := New()
 	m.SetSize(60, 10)
 	m.SetResult(sortTestResult())
-	m.table.SetCursor(2) // row with id=2
+	m.cursor = 2 // row with id=2
 
 	m.SortColumn("score")
 	row, column, value, ok := m.SelectedCell()
@@ -195,7 +195,7 @@ func TestSortVirtualMode(t *testing.T) {
 	m.SetResult(res)
 	_ = m.View() // virtual widths are computed lazily
 
-	m.virtualCursor = 0
+	m.cursor = 0
 	perm, ok := m.SortColumn("id")
 	if !ok {
 		t.Fatal("virtual sort not applied")
@@ -203,8 +203,8 @@ func TestSortVirtualMode(t *testing.T) {
 	if m.result.Rows[0][0] != int64(1) || m.result.Rows[len(m.result.Rows)-1][0] != int64(virtualThreshold+10) {
 		t.Fatalf("virtual sort order = %v..%v", m.result.Rows[0][0], m.result.Rows[len(m.result.Rows)-1][0])
 	}
-	if m.virtualCursor != perm[0] {
-		t.Fatalf("virtual cursor = %d, want %d", m.virtualCursor, perm[0])
+	if m.cursor != perm[0] {
+		t.Fatalf("virtual cursor = %d, want %d", m.cursor, perm[0])
 	}
 	view := ansi.Strip(m.View())
 	if !strings.Contains(view, "id ▲") {

@@ -155,7 +155,7 @@ func TestViewFillsTerminal(t *testing.T) {
 
 func TestViewContainsPaneTitles(t *testing.T) {
 	view := ansi.Strip(newSized(t, 80, 24).View())
-	for _, want := range []string{"Connections", "Query", "Results", "focus: workspace"} {
+	for _, want := range []string{"Explorer", "Query", "Results", "focus: workspace"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view missing %q:\n%s", want, view)
 		}

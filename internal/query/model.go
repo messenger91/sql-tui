@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/messenger91/sql-tui/internal/export"
 
@@ -31,6 +32,14 @@ type ExecuteRequestedMsg struct {
 	SQL string
 }
 
+// Mode is the editor input mode (Vim-style Insert/Normal).
+type Mode int
+
+const (
+	ModeInsert Mode = iota
+	ModeNormal
+)
+
 // Model is the query editor pane.
 type Model struct {
 	editor  textarea.Model
@@ -49,6 +58,9 @@ type Model struct {
 	usage       map[string]int
 	suggestGen  int
 	baseHeight  int
+
+	mode    Mode
+	pending string // multi-key Normal-mode prefix ("g", "d")
 
 	width, height int
 }
@@ -82,6 +94,20 @@ func (m Model) Init() tea.Cmd {
 // SQL returns the current editor contents.
 func (m Model) SQL() string { return m.editor.Value() }
 
+// Mode returns the active input mode.
+func (m Model) Mode() Mode { return m.mode }
+
+// NormalMode reports whether the editor is in Vim normal mode.
+func (m Model) NormalMode() bool { return m.mode == ModeNormal }
+
+// ModeLabel renders the mode for the query pane title.
+func (m Model) ModeLabel() string {
+	if m.mode == ModeNormal {
+		return "NORMAL"
+	}
+	return "INSERT"
+}
+
 // SetHistory seeds the recall buffer with persisted queries (oldest first).
 func (m *Model) SetHistory(queries []string) {
 	m.history = append([]string(nil), queries...)
@@ -97,6 +123,8 @@ func (m *Model) SetSQL(sql string) {
 	m.hidePopup()
 	m.editor.SetValue(sql)
 	m.editor.Focus()
+	m.mode = ModeInsert
+	m.pending = ""
 }
 
 // InsertText inserts text at the editor cursor.
@@ -104,6 +132,8 @@ func (m *Model) InsertText(text string) {
 	m.hidePopup()
 	m.editor.InsertString(text)
 	m.editor.Focus()
+	m.mode = ModeInsert
+	m.pending = ""
 }
 
 // SetSize resizes the editor, reserving one row for the status line and room
@@ -260,7 +290,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		return m, nil
 
 	case suggestTickMsg:
-		if msg.Gen == m.suggestGen && msg.Text == m.editor.Value() {
+		if m.mode == ModeInsert && msg.Gen == m.suggestGen && msg.Text == m.editor.Value() {
 			m = m.computeSuggestions()
 		}
 		return m, nil
@@ -306,7 +336,20 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		case "ctrl+down":
 			m.historyForward()
 			return m, nil
+		case "esc":
+			if m.mode == ModeInsert {
+				m.mode = ModeNormal
+				m.pending = ""
+			}
+			m.hidePopup()
+			return m, nil
 		}
+
+		if m.mode == ModeNormal {
+			m.handleNormalKey(msg)
+			return m, nil
+		}
+
 		var cmd tea.Cmd
 		m.editor, cmd = m.editor.Update(msg)
 		suggestCmd := m.scheduleSuggest()
@@ -315,6 +358,138 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	default:
 		return m, nil
 	}
+}
+
+// handleNormalKey implements the Vim normal-mode subset.
+func (m *Model) handleNormalKey(msg tea.KeyMsg) {
+	key := msg.String()
+	if m.pending != "" {
+		switch m.pending + key {
+		case "gg":
+			m.editor, _ = m.editor.Update(tea.KeyMsg{Type: tea.KeyCtrlHome})
+		case "dd":
+			m.deleteLine()
+		}
+		m.pending = ""
+		return
+	}
+
+	switch key {
+	case "i":
+		m.mode = ModeInsert
+	case "a":
+		m.editor, _ = m.editor.Update(tea.KeyMsg{Type: tea.KeyRight})
+		m.mode = ModeInsert
+	case "A":
+		m.editor.CursorEnd()
+		m.mode = ModeInsert
+	case "I":
+		m.editor.CursorStart()
+		m.mode = ModeInsert
+	case "o":
+		m.openLine(true)
+	case "O":
+		m.openLine(false)
+	case "h", "left":
+		m.editor, _ = m.editor.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	case "l", "right":
+		m.editor, _ = m.editor.Update(tea.KeyMsg{Type: tea.KeyRight})
+	case "j", "down":
+		m.editor.CursorDown()
+	case "k", "up":
+		m.editor.CursorUp()
+	case "0":
+		m.editor.CursorStart()
+	case "$":
+		m.editor.CursorEnd()
+	case "w":
+		m.moveWord(true)
+	case "b":
+		m.moveWord(false)
+	case "x":
+		m.editor, _ = m.editor.Update(tea.KeyMsg{Type: tea.KeyDelete})
+	case "G":
+		m.editor, _ = m.editor.Update(tea.KeyMsg{Type: tea.KeyCtrlEnd})
+	case "g", "d":
+		m.pending = key
+	}
+}
+
+// moveWord moves to the next/previous word boundary in the whole buffer.
+func (m *Model) moveWord(forward bool) {
+	text := []rune(m.editor.Value())
+	position := min(max(m.cursorIndex(), 0), len(text))
+	if forward {
+		for position < len(text) && !unicode.IsSpace(text[position]) {
+			position++
+		}
+		for position < len(text) && unicode.IsSpace(text[position]) {
+			position++
+		}
+	} else {
+		for position > 0 && unicode.IsSpace(text[position-1]) {
+			position--
+		}
+		for position > 0 && !unicode.IsSpace(text[position-1]) {
+			position--
+		}
+	}
+	m.setCursorIndex(position)
+}
+
+// setCursorIndex positions the textarea cursor at a rune offset.
+func (m *Model) setCursorIndex(index int) {
+	lines := strings.Split(m.editor.Value(), "\n")
+	row, column := 0, max(index, 0)
+	for row < len(lines)-1 && column > len([]rune(lines[row])) {
+		column -= len([]rune(lines[row])) + 1
+		row++
+	}
+	column = min(max(column, 0), len([]rune(lines[row])))
+	m.editor, _ = m.editor.Update(tea.KeyMsg{Type: tea.KeyCtrlHome})
+	for i := 0; i < row; i++ {
+		m.editor.CursorDown()
+	}
+	m.editor.SetCursor(column)
+}
+
+// openLine inserts an empty line above or below and enters Insert mode.
+func (m *Model) openLine(below bool) {
+	lines := strings.Split(m.editor.Value(), "\n")
+	row := min(max(m.editor.Line(), 0), len(lines)-1)
+	insert := row + 1
+	if !below {
+		insert = row
+	}
+	lines = append(lines, "")
+	copy(lines[insert+1:], lines[insert:])
+	lines[insert] = ""
+	m.editor.SetValue(strings.Join(lines, "\n"))
+	m.setCursorIndex(lineStart(lines, insert))
+	m.mode = ModeInsert
+}
+
+// deleteLine removes the cursor's line (Vim "dd").
+func (m *Model) deleteLine() {
+	lines := strings.Split(m.editor.Value(), "\n")
+	if len(lines) <= 1 {
+		m.editor.SetValue("")
+		return
+	}
+	row := min(max(m.editor.Line(), 0), len(lines)-1)
+	lines = append(lines[:row], lines[row+1:]...)
+	m.editor.SetValue(strings.Join(lines, "\n"))
+	target := min(row, len(lines)-1)
+	m.setCursorIndex(lineStart(lines, target))
+}
+
+// lineStart returns the rune offset of a line's first character.
+func lineStart(lines []string, row int) int {
+	index := 0
+	for i := 0; i < row && i < len(lines); i++ {
+		index += len([]rune(lines[i])) + 1
+	}
+	return index
 }
 
 func (m *Model) movePopup(delta int) {

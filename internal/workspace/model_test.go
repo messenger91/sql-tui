@@ -280,3 +280,79 @@ func TestEmptyStateView(t *testing.T) {
 		t.Fatalf("view = %q", view)
 	}
 }
+
+func clickableWorkspace(t *testing.T) Model {
+	t.Helper()
+	m := New(nil, nil)
+	m.SetSize(40, 20)
+	m.connections = []db.Connection{
+		{ID: "c1", Name: "first", Driver: db.DriverSQLite, DSN: ":memory:"},
+		{ID: "c2", Name: "second", Driver: db.DriverSQLite, DSN: ":memory:"},
+	}
+	m.rebuildList()
+	m.loaded = true
+	m.activeID = "c1"
+	m.SetTables([]string{"users", "orders"})
+	return m
+}
+
+func TestClickActiveConnectionExpandsTables(t *testing.T) {
+	m := clickableWorkspace(t)
+	m, cmd := m.ClickItem(0)
+	if cmd != nil {
+		t.Fatal("connection click produced a command")
+	}
+	if !m.TablesVisible() {
+		t.Fatal("clicking the active connection did not expand tables")
+	}
+	if got := m.tables.SelectedItem(); got == nil {
+		t.Fatal("table list has no selection")
+	}
+
+	m, cmd = m.ClickItem(0)
+	if cmd == nil {
+		t.Fatal("table click produced no command")
+	}
+	fetch, ok := cmd().(FetchTableMsg)
+	if !ok || fetch.Table != "users" {
+		t.Fatalf("fetch = %+v", fetch)
+	}
+	if m.TablesVisible() {
+		t.Fatal("fetching a table did not close the list")
+	}
+}
+
+func TestClickInactiveConnectionOnlySelects(t *testing.T) {
+	m := clickableWorkspace(t)
+	m, cmd := m.ClickItem(3) // second connection (3-line stride)
+	if cmd != nil {
+		t.Fatal("inactive connection click produced a command")
+	}
+	if m.TablesVisible() {
+		t.Fatal("inactive connection expanded tables")
+	}
+	selected, ok := m.selected()
+	if !ok || selected.ID != "c2" {
+		t.Fatalf("selected = %+v", selected)
+	}
+}
+
+func TestClickEmptySpaceDoesNothing(t *testing.T) {
+	m := clickableWorkspace(t)
+	m, cmd := m.ClickItem(15)
+	if cmd != nil || m.TablesVisible() {
+		t.Fatalf("empty click changed state: visible=%v cmd=%v", m.TablesVisible(), cmd)
+	}
+}
+
+func TestClickConnectionTogglesTablesClosed(t *testing.T) {
+	m := clickableWorkspace(t)
+	m.toggleTables()
+	if !m.TablesVisible() {
+		t.Fatal("tables did not open")
+	}
+	m, _ = m.ClickItem(0)
+	if m.TablesVisible() {
+		t.Fatal("click did not collapse tables")
+	}
+}

@@ -151,6 +151,68 @@ func (m Model) WorkspaceConnections() []db.Connection { return m.connections }
 // TablesVisible reports whether the quick-fetch dropdown is open.
 func (m Model) TablesVisible() bool { return m.tableMode }
 
+// Filtering reports whether a list (connections or tables) is capturing runes
+// for its filter, so global pane hotkeys must not steal them.
+func (m Model) Filtering() bool {
+	if m.tableMode {
+		return m.tables.FilterState() == list.Filtering
+	}
+	return m.list.FilterState() == list.Filtering
+}
+
+// ClickItem handles a left click inside the pane body (0 is the first list
+// line). Clicking a table fetches it; clicking the active connection toggles
+// its table list.
+func (m Model) ClickItem(line int) (Model, tea.Cmd) {
+	if m.CapturesInput() || m.busy || line < 0 {
+		return m, nil
+	}
+	if m.tableMode {
+		if m.tables.FilterState() == list.Filtering {
+			return m, nil
+		}
+		index, ok := clickIndex(&m.tables, line, 2)
+		if !ok {
+			return m, nil
+		}
+		m.tables.Select(index)
+		entry, ok := m.tables.SelectedItem().(tableName)
+		if !ok {
+			return m, nil
+		}
+		m.tableMode = false
+		name := string(entry.name)
+		return m, func() tea.Msg { return FetchTableMsg{Table: name} }
+	}
+	if m.list.FilterState() == list.Filtering {
+		return m, nil
+	}
+	index, ok := clickIndex(&m.list, line, 3)
+	if !ok {
+		return m, nil
+	}
+	m.list.Select(index)
+	connection, ok := m.selected()
+	if !ok || connection.ID != m.activeID || len(m.tableNames) == 0 {
+		return m, nil
+	}
+	m.toggleTables()
+	return m, nil
+}
+
+// clickIndex maps a content line to an item index in a list. Connections use
+// a 3-line stride (title + description + spacing); tables use 2 (title plus
+// spacing).
+func clickIndex(l *list.Model, line, stride int) (int, bool) {
+	items := l.VisibleItems()
+	start, end := l.Paginator.GetSliceBounds(len(items))
+	index := start + line/stride
+	if index < start || index >= end {
+		return 0, false
+	}
+	return index, true
+}
+
 func (m *Model) toggleTables() {
 	if len(m.tableNames) == 0 {
 		return

@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/messenger91/sql-tui/internal/workspace"
 )
 
 func mouseClick(x, y int) tea.MouseMsg {
@@ -124,5 +126,52 @@ func TestQuestionMarkTypesInEditor(t *testing.T) {
 	}
 	if m.helpOpen {
 		t.Fatal("'?' opened the help menu while the editor was focused")
+	}
+}
+
+func addTestConnection(t *testing.T, m Model) Model {
+	t.Helper()
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m = typeRunes(t, m, "local")
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyTab})
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyTab})
+	m = typeRunes(t, m, ":memory:")
+	m, cmd := appUpdate(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	for _, msg := range collectCmds(cmd) {
+		m, _ = appUpdate(t, m, msg)
+	}
+	if got := len(m.workspace.WorkspaceConnections()); got != 1 {
+		t.Fatalf("connections = %d", got)
+	}
+	return m
+}
+
+func TestMouseExplorerClickExpandsTables(t *testing.T) {
+	m := newSized(t, 80, 24)
+	m = addTestConnection(t, m)
+	connection := m.workspace.WorkspaceConnections()[0]
+	m.workspace.ActivationSucceeded(connection.ID)
+	m.workspace.SetTables([]string{"users", "orders"})
+
+	// Click the first connection row (content starts at y=2).
+	m, _ = appUpdate(t, m, mouseClick(2, 2))
+	if m.focus != FocusWorkspace {
+		t.Fatalf("focus = %v", m.focus)
+	}
+	if !m.workspace.TablesVisible() {
+		t.Fatal("clicking the active connection did not expand tables")
+	}
+
+	// Click the first table row to fetch it.
+	m, cmd := appUpdate(t, m, mouseClick(2, 2))
+	if cmd == nil {
+		t.Fatal("table click produced no command")
+	}
+	msg, ok := cmd().(workspace.FetchTableMsg)
+	if !ok || msg.Table != "users" {
+		t.Fatalf("table click message = %#v", msg)
+	}
+	if m.workspace.TablesVisible() {
+		t.Fatal("fetching a table did not close the list")
 	}
 }

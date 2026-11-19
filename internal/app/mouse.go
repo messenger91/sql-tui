@@ -58,6 +58,12 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if !m.wsHidden {
 		m.focus = FocusWorkspace
 		m.syncFocus()
+		if msg.Y >= 2 {
+			// Pane content: row 0 is the border, row 1 the title.
+			updated, cmd := m.workspace.ClickItem(msg.Y - 2)
+			m.workspace = updated
+			return m, cmd
+		}
 	}
 	return m, nil
 }

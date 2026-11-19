@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -41,7 +40,6 @@ const (
 // Model is the results pane. It keeps the raw result for export (§8) and
 // renders the active format: table, CSV, or JSON.
 type Model struct {
-	table    table.Model
 	viewport viewport.Model
 
 	result    db.QueryResult
@@ -54,11 +52,11 @@ type Model struct {
 	hidden       map[string]bool
 	widthDelta   map[string]int
 
-	virtual       bool
-	virtualCursor int
-	rowCache      map[int][]string
-	widthsCache   []int
-	columnWidths  []int
+	virtual      bool
+	cursor       int
+	rowCache     map[int][]string
+	widthsCache  []int
+	columnWidths []int
 
 	// Sort state is applied by reordering result.Rows in place; callers must
 	// remap pending row indexes through the returned permutation.
@@ -73,20 +71,9 @@ type Model struct {
 
 // New returns an empty results model.
 func New() Model {
-	styles := table.DefaultStyles()
-	t := table.New(
-		table.WithColumns(nil),
-		table.WithRows(nil),
-		table.WithFocused(false),
-		table.WithStyles(styles),
-	)
-	t.SetWidth(80)
-	t.SetHeight(8)
-
 	vp := viewport.New(80, 8)
 
 	return Model{
-		table:      t,
 		viewport:   vp,
 		format:     FormatTable,
 		width:      80,
@@ -126,14 +113,8 @@ func (m Model) SelectedCell() (int, string, any, bool) {
 	return row, m.result.Columns[column], value, true
 }
 
-// selectedRow returns the focused result row in either table mode
-// (bubbles/table cursor) or virtual mode (manual cursor).
-func (m Model) selectedRow() int {
-	if m.virtual {
-		return m.virtualCursor
-	}
-	return m.table.Cursor()
-}
+// selectedRow returns the focused result row.
+func (m Model) selectedRow() int { return m.cursor }
 
 // visibleColumns returns the original indexes of columns not hidden.
 func (m Model) visibleColumns() []int {
@@ -239,11 +220,7 @@ func (m *Model) Resort() {
 		return
 	}
 	m.applySort(index, m.sortAsc)
-	if m.virtual {
-		m.virtualCursor = min(max(m.virtualCursor, 0), max(len(m.result.Rows)-1, 0))
-	} else if len(m.result.Rows) > 0 {
-		m.table.SetCursor(min(max(m.table.Cursor(), 0), len(m.result.Rows)-1))
-	}
+	m.cursor = min(max(m.cursor, 0), max(len(m.result.Rows)-1, 0))
 	m.invalidateRowCache()
 	m.rebuild()
 }
@@ -267,13 +244,16 @@ func (m *Model) SelectColumn(name string) {
 
 // ColumnAt maps an offset inside the rendered header row (content-relative,
 // zero-based) to a column name. Cells are padded by one space on each side.
-func (m Model) ColumnAt(offset int) (string, bool) {
-	if !m.has || offset < 0 || len(m.columnWidths) == 0 {
+// Widths are computed on demand so virtual-mode headers are clickable before
+// the next render.
+func (m *Model) ColumnAt(offset int) (string, bool) {
+	if !m.has || offset < 0 {
 		return "", false
 	}
+	widths := m.tableWidths()
 	visible := m.visibleColumns()
 	position := 0
-	for i, width := range m.columnWidths {
+	for i, width := range widths {
 		block := width + 2
 		if offset < position+block {
 			if i < len(visible) {
@@ -347,12 +327,7 @@ func (m *Model) selectRow(perm []int, previous int) {
 	if previous < 0 || previous >= len(perm) {
 		return
 	}
-	position := perm[previous]
-	if m.virtual {
-		m.virtualCursor = position
-		return
-	}
-	m.table.SetCursor(position)
+	m.cursor = perm[previous]
 }
 
 func columnValue(row []any, index int) any {
@@ -366,18 +341,17 @@ func columnValue(row []any, index int) any {
 func (m *Model) SetSize(width, height int) {
 	m.width = max(width, 4)
 	m.height = max(height, 2)
-	m.table.SetWidth(m.width)
-	m.table.SetHeight(max(m.height-2, 1)) // header + status line
 	m.viewport.Width = m.width
 	m.viewport.Height = max(m.height-1, 1) // status line
 	m.rebuild()
 }
 
-// Focus enables row navigation.
-func (m *Model) Focus() { m.table.Focus() }
+// Focus and Blur are kept for the pane-focus wiring; the custom table renderer
+// always shows the selected row.
+func (m *Model) Focus() {}
 
-// Blur disables row navigation.
-func (m *Model) Blur() { m.table.Blur() }
+// Blur is a no-op for the custom renderer.
+func (m *Model) Blur() {}
 
 // SetResult installs a new result set and resets scroll/cursor.
 func (m *Model) SetResult(result db.QueryResult) {
@@ -390,13 +364,9 @@ func (m *Model) SetResult(result db.QueryResult) {
 	m.sortAsc = true
 	m.orderVersion++
 	m.syncVirtualMode()
-	m.virtualCursor = 0
+	m.cursor = 0
 	m.invalidateRowCache()
 	m.rebuild()
-	// Set the cursor after rows exist: table clamps the cursor against the
-	// current row count, so doing this before rebuild leaves it at -1.
-	m.table.SetCursor(0)
-	m.table.GotoTop()
 	m.viewport.SetYOffset(0)
 }
 
@@ -416,9 +386,7 @@ func (m *Model) ReplaceRowValues(index int, raw []any) {
 	}
 	m.result.Rows[index] = append([]any(nil), raw...)
 	m.invalidateRowCache()
-	if m.virtual {
-		m.virtualCursor = min(max(m.virtualCursor, 0), len(m.result.Rows)-1)
-	}
+	m.cursor = min(max(m.cursor, 0), len(m.result.Rows)-1)
 	m.rebuild()
 }
 
@@ -429,9 +397,10 @@ func (m *Model) RemoveRowResult(index int) {
 	}
 	m.result.Rows = append(m.result.Rows[:index], m.result.Rows[index+1:]...)
 	m.result.RowCount = len(m.result.Rows)
-	if m.virtual && m.virtualCursor >= index && m.virtualCursor > 0 {
-		m.virtualCursor--
+	if m.cursor >= index && m.cursor > 0 {
+		m.cursor--
 	}
+	m.cursor = min(max(m.cursor, 0), max(len(m.result.Rows)-1, 0))
 	m.invalidateRowCache()
 	m.rebuild()
 }
@@ -452,21 +421,15 @@ func (m *Model) AppendRows(rows [][]any) {
 		return
 	}
 	oldCount := len(m.result.Rows)
-	atBottom := oldCount == 0 || m.table.Cursor() >= oldCount-1
+	atBottom := oldCount == 0 || m.cursor >= oldCount-1
 	m.result.Rows = append(m.result.Rows, rows...)
 	m.result.RowCount = len(m.result.Rows)
 	m.invalidateRowCache()
 	m.rebuild()
-	if m.virtual {
-		if atBottom {
-			m.virtualCursor = len(m.result.Rows) - 1
-		}
-		m.virtualCursor = min(m.virtualCursor, len(m.result.Rows)-1)
-		return
-	}
 	if atBottom && len(m.result.Rows) > 0 {
-		m.table.SetCursor(len(m.result.Rows) - 1)
+		m.cursor = len(m.result.Rows) - 1
 	}
+	m.cursor = min(max(m.cursor, 0), max(len(m.result.Rows)-1, 0))
 }
 
 // Result returns the raw result and whether one is present.
@@ -497,8 +460,7 @@ func (m *Model) CycleFormat() Format {
 
 func (m *Model) resetScroll() {
 	m.viewport.SetYOffset(0)
-	m.table.SetCursor(0)
-	m.table.GotoTop()
+	m.cursor = 0
 }
 
 // Update handles navigation for the active view.
@@ -509,7 +471,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.viewport, cmd = m.viewport.Update(msg)
 	default:
 		if key, ok := msg.(tea.KeyMsg); ok {
-			if m.virtual && m.virtualUpdate(key) {
+			if m.tableUpdate(key) {
 				return m, nil
 			}
 			switch key.String() {
@@ -533,13 +495,14 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				return m, nil
 			}
 		}
-		m.table, cmd = m.table.Update(msg)
 	}
 	return m, cmd
 }
 
-// View renders the active view plus the status line.
-func (m Model) View() string {
+// View renders the active view plus the status line. It uses a pointer
+// receiver so width/row caches computed while rendering persist for header
+// hit-testing and the next frame.
+func (m *Model) View() string {
 	if !m.has {
 		return "no results yet\n\nctrl+r in the query pane to run something"
 	}
@@ -552,13 +515,9 @@ func (m Model) View() string {
 	case FormatCSV, FormatJSON:
 		body = m.viewport.View()
 	default:
-		if m.virtual {
-			body = m.virtualView()
-		} else {
-			body = m.table.View()
-		}
+		body = m.tableView()
 	}
-	body = lipgloss.NewStyle().Height(max(m.height-1, 1)).Render(body)
+	body = lipgloss.NewStyle().Width(m.width).Height(max(m.height-1, 1)).Render(body)
 	return lipgloss.JoinVertical(lipgloss.Left, body, m.statusLine())
 }
 
@@ -596,14 +555,8 @@ func (m *Model) rebuild() {
 	}
 	m.syncVirtualMode()
 	if len(m.result.Columns) == 0 {
-		m.table.SetColumns(nil)
-		m.table.SetRows(nil)
-		m.viewport.SetContent("")
-		return
-	}
-	if m.virtual {
-		// The virtualized renderer works on demand; nothing to pre-build.
 		m.invalidateRowCache()
+		m.viewport.SetContent("")
 		return
 	}
 	// CSV/JSON rendering is deferred until streaming completes to avoid
@@ -626,65 +579,13 @@ func (m *Model) rebuild() {
 		}
 		m.viewport.SetContent(export.HighlightJSON(strings.TrimRight(text, "\n")))
 	default:
-		m.rebuildTable()
-	}
-}
-
-func (m *Model) rebuildTable() {
-	visible := m.visibleColumns()
-	if len(visible) == 0 {
-		return
-	}
-	columns := make([]table.Column, len(visible))
-	natural := make([]int, len(visible))
-	for position, index := range visible {
-		natural[position] = ansi.StringWidth(m.result.Columns[index] + m.sortIndicator(index))
-	}
-
-	rows := export.ValueRows(m.result)
-	tableRows := make([]table.Row, 0, len(rows))
-	for rowIndex, row := range rows {
-		filtered := make([]string, 0, len(visible))
-		for _, index := range visible {
-			if index < len(row) {
-				filtered = append(filtered, row[index])
-			} else {
-				filtered = append(filtered, "")
-			}
+		m.invalidateRowCache()
+		if !m.virtual {
+			// Small results are measured eagerly so header hit-testing and
+			// resize keys work before the next render.
+			m.tableWidths()
 		}
-		if m.pendingRows[rowIndex] && len(filtered) > 0 {
-			filtered[0] = "* " + filtered[0]
-		}
-		for i, cell := range filtered {
-			if width := ansi.StringWidth(cell); width > natural[i] {
-				natural[i] = width
-			}
-		}
-		tableRows = append(tableRows, table.Row(filtered))
 	}
-	for position, index := range visible {
-		delta := m.widthDelta[strings.ToLower(m.result.Columns[index])]
-		natural[position] = max(natural[position], minColumnWidth) + delta
-	}
-
-	widths := fitWidths(natural, m.width)
-	for position, index := range visible {
-		title := m.result.Columns[index] + m.sortIndicator(index)
-		columns[position] = table.Column{Title: title, Width: widths[position]}
-	}
-	m.columnWidths = widths
-	// Reset rows first: table.SetColumns/SetRows re-render against the
-	// previous shape and would panic when the visible column count changes.
-	cursor := m.table.Cursor()
-	m.table.SetRows(nil)
-	m.table.SetColumns(columns)
-	m.table.SetRows(tableRows)
-	if len(tableRows) > 0 {
-		m.table.SetCursor(min(max(cursor, 0), len(tableRows)-1))
-	}
-	m.table.SetWidth(m.width)
-	m.table.SetHeight(max(m.height-2, 1))
-	m.cellCol = min(m.cellCol, len(visible)-1)
 }
 
 func (m Model) hiddenCount() int {
