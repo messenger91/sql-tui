@@ -1,0 +1,4 @@
+1. UPDATE "users" SET "id" = ? WHERE "id" = ?
+   args: 42, 2
+
+enter apply · esc close

@@ -320,10 +320,10 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 - [x] After commit: refresh the affected cells from the DB in place (re-query by PK) rather than re-running the whole query, unless refresh fails → fall back to re-running. (MVP: always re-runs the original query after commit; true in-place cell refresh remains a refinement.)
 
 ### 12.5 Tests
-- [ ] DML generation table tests per dialect: placeholder numbering, identifier quoting with embedded quotes, `NULL`s, all supported types, `WHERE` with composite PKs.
-- [ ] SQLite in-memory integration tests: happy-path update/insert/delete; rollback on mid-batch error; `RowsAffected != 1` abort; conflict detection (mutate a row out-of-band between load and apply).
-- [ ] Postgres/MySQL integration tests behind a `//go:build integration` tag using Docker Compose from §14.
-- [ ] Ensure pending edits survive a view toggle (`v` table↔CSV↔JSON) and a tab switch.
+- [x] DML generation table tests per dialect: placeholder numbering, identifier quoting with embedded quotes, `NULL`s, all supported types, `WHERE` with composite PKs.
+- [x] SQLite in-memory integration tests: happy-path update/insert/delete; rollback on mid-batch error; `RowsAffected != 1` abort; conflict detection (mutate a row out-of-band between load and apply).
+- [x] Postgres/MySQL integration tests behind a `//go:build integration` tag using Docker Compose from §14. (Commit and conflict paths verified on both drivers.)
+- [x] Ensure pending edits survive a view toggle (`v` table↔CSV↔JSON) and a tab switch.
 
 ---
 

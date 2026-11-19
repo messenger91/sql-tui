@@ -2,7 +2,7 @@
 
 ## Current state
 
-Completed: §0–§9 — bootstrap, `internal/db` (SQLite, MySQL, and Postgres: connect, execute, schema), root TUI shell, workspace pane, query editor, table/CSV/JSON result views, view toggle, and export to file or clipboard. **M3, M4, and M5 are complete; §10 and §11 are complete; §12.1–§12.4 are complete.** Next: §12.5 inline-editing tests, then M9 polish. `TODO.md` is authoritative for what is implemented.
+Completed: §0–§9 — bootstrap, `internal/db` (SQLite, MySQL, and Postgres: connect, execute, schema), root TUI shell, workspace pane, query editor, table/CSV/JSON result views, view toggle, and export to file or clipboard. **M3, M4, and M5 are complete; §10, §11, and §12 are complete (M8 done).** Next: M9 (§13 polish + §14 full sweep). `TODO.md` is authoritative for what is implemented.
 
 ## Source of truth
 
@@ -28,7 +28,7 @@ Completed: §0–§9 — bootstrap, `internal/db` (SQLite, MySQL, and Postgres: 
 - Single test: `go test -race -run TestName ./internal/db/`.
 - `staticcheck` and `golangci-lint` are not installed in this environment; `make lint` skips `staticcheck` with a notice.
 - Integration tests: `make db-up` starts MySQL (`127.0.0.1:3307`, root/root) and Postgres (`127.0.0.1:5433`, postgres/postgres) via `docker-compose.yml`; `make test-integration` runs `go test -tags integration ./...`; `make db-down` removes them and volumes. Override DSNs with `MYSQL_TEST_DSN` / `POSTGRES_TEST_DSN`. Plain `go test ./...` must not require Docker.
-- Golden tests use stdlib `testdata/*.golden` comparison; regenerate with `go test ./internal/query -run TestGolden -update` or `go test ./internal/app -run TestGolden -update` (each package defines its own `-update` flag).
+- Golden tests use stdlib `testdata/*.golden` comparison; regenerate with `go test ./internal/query -run TestGolden -update` or `go test ./internal/app -run TestGolden -update` (each package defines its own `-update` flag). The app golden set includes `tab_bar` and `dml_preview`.
 - `go.uber.org/goleak` runs in `internal/session`'s `TestMain`; session/runner tests must leave no goroutines behind.
 - Manual PTY smoke tests: run under `TERM=dumb` (e.g. `script -qec "./bin/sql-tui" /dev/null`). With a colour-capable `TERM`, termenv blocks waiting for an OSC background-colour reply that `script` never sends, so the app appears to hang before entering raw mode.
 

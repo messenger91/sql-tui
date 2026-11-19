@@ -152,6 +152,31 @@ func TestApplyDelete(t *testing.T) {
 	}
 }
 
+func TestApplyInsertFromDuplicate(t *testing.T) {
+	s, handle := applySession(t)
+	s.Pending.EnsureSnapshot(0, snapshotCurrent(s, 0))
+	s.Pending.SetRowOp(0, RowDuplicate)
+	s.Pending.SetCell(0, "id", CellEdit{Value: int64(3), Original: int64(1)})
+	s.Pending.SetCell(0, "email", CellEdit{Value: "dup", Original: "a"})
+
+	plan, err := s.PrepareApply()
+	if err != nil {
+		t.Fatalf("PrepareApply: %v", err)
+	}
+	outcome := plan.Apply(context.Background(), handle)
+	if outcome.Err != nil || outcome.Applied != 1 {
+		t.Fatalf("outcome = %+v", outcome)
+	}
+
+	var count int
+	if err := handle.QueryRow(`SELECT count(*) FROM users WHERE email = 'dup'`).Scan(&count); err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("inserted rows = %d", count)
+	}
+}
+
 func TestPrepareApplyErrors(t *testing.T) {
 	s, _ := applySession(t)
 	if _, err := s.PrepareApply(); err == nil {
