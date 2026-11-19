@@ -8,6 +8,7 @@ type keyMap struct {
 	Help      key.Binding
 	Quit      key.Binding
 	Close     key.Binding
+	Export    key.Binding
 }
 
 func defaultKeyMap() keyMap {
@@ -32,19 +33,23 @@ func defaultKeyMap() keyMap {
 			key.WithKeys("esc"),
 			key.WithHelp("esc", "close"),
 		),
+		Export: key.NewBinding(
+			key.WithKeys("ctrl+e"),
+			key.WithHelp("ctrl+e", "export"),
+		),
 	}
 }
 
 // ShortHelp implements help.KeyMap.
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Cycle, k.Help, k.Quit}
+	return []key.Binding{k.Cycle, k.Export, k.Help, k.Quit}
 }
 
 // FullHelp implements help.KeyMap.
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Cycle, k.CyclePrev},
-		{k.Help, k.Close},
+		{k.Export, k.Help, k.Close},
 		{k.Quit},
 	}
 }

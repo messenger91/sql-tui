@@ -41,7 +41,7 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
   - PostgreSQL: `github.com/lib/pq` or `github.com/jackc/pgx/v5/stdlib`
   - SQLite: `modernc.org/sqlite` (or `mattn/go-sqlite3`)
   - Implemented as a `Driver` switch in `internal/db` (no mutable registry); Connect wired for all three, blank-imported drivers.
-- [ ] Add `github.com/atotto/clipboard`.
+- [x] Add `github.com/atotto/clipboard`. (Used directly by `internal/export.SystemClipboard`.)
 - [ ] Add `github.com/sahilm/fuzzy` (or `github.com/lithammer/fuzzysearch/fuzzy`) for autocomplete ranking (§10).
 - [x] Create `Makefile` with `build`, `run`, `test`, `test-race`, `lint`.
 
@@ -161,20 +161,20 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 
 ## 8. Export (CSV / JSON → file / clipboard)
 
-- [ ] Add an export dialog overlay triggered by `ctrl+e` in the Response window.
-- [ ] Dialog options:
+- [x] Add an export dialog overlay triggered by `ctrl+e` in the Response window.
+- [x] Dialog options:
   - Format: `CSV` / `JSON`
   - Destination: `File` / `Clipboard`
-  - File path (pre-filled `./results-YYYYMMDD-HHMMSS.csv|json`) via `textinput`; `tab` to a `filepicker` for directory selection if desired.
-- [ ] **File export**:
-  - CSV: `encoding/csv` → `os.Create` with 0644; write header + rows; flush and check `writer.Error()`.
-  - JSON: `json.NewEncoder(file).Encode([]map[string]any{...})` with indentation.
+  - File path (pre-filled `./results-YYYYMMDD-HHMMSS.csv|json`) via `textinput`; `tab` to a `filepicker` for directory selection if desired. (Filepicker skipped; path is typed directly.)
+- [x] **File export**:
+  - CSV: `encoding/csv` → `os.Create` with 0644; write header + rows; flush and check `writer.Error()`. (`os.OpenFile` with 0644; write/flush/close errors checked.)
+  - JSON: `json.NewEncoder(file).Encode([]map[string]any{...})` with indentation. (Ordered-object encoder in `internal/export`.)
   - Report absolute path on success.
-- [ ] **Clipboard export**:
+- [x] **Clipboard export**:
   - Serialize to string (CSV or JSON) and call `clipboard.WriteAll`.
-  - On Linux, `atotto/clipboard` requires `xclip`/`xsel`; surface a clear error if unavailable.
-- [ ] Show a transient toast/status (`Export complete`) in the footer.
-- [ ] Refactor serialization into `internal/export` so table rendering and export share value-formatting logic.
+  - On Linux, `atotto/clipboard` requires `xclip`/`xsel`; surface a clear error if unavailable. (Error shown in an "Export failed" dialog.)
+- [x] Show a transient toast/status (`Export complete`) in the footer. (4-second timeout, sequence-guarded.)
+- [x] Refactor serialization into `internal/export` so table rendering and export share value-formatting logic.
 
 ---
 

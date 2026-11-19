@@ -17,6 +17,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/messenger91/sql-tui/internal/db"
+	"github.com/messenger91/sql-tui/internal/export"
 	"github.com/messenger91/sql-tui/internal/query"
 	"github.com/messenger91/sql-tui/internal/result"
 	"github.com/messenger91/sql-tui/internal/styles"
@@ -37,10 +38,11 @@ type modalBox struct {
 	Body  string
 }
 
-// Config carries filesystem locations used by the app. The zero value keeps
-// everything in memory, which is what tests want.
+// Config carries filesystem locations and injectable services. The zero
+// value keeps persistence in memory and uses the system clipboard.
 type Config struct {
 	ConnectionsPath string
+	Clipboard       export.Clipboard
 }
 
 // Model is the root application model.
@@ -52,10 +54,14 @@ type Model struct {
 	workspace workspace.Model
 	query     query.Model
 	results   result.Model
+	clipboard export.Clipboard
 
 	focus         Focus
 	width, height int
 	modal         *modalBox
+	export        *exportDialog
+	notice        string
+	noticeSeq     int
 
 	active       *db.Connection
 	schema       []db.TableMeta
@@ -74,6 +80,10 @@ func NewWithConfig(cfg Config) Model {
 	h.Width = defaultWidth
 	manager := db.NewManager()
 	store := workspace.NewStore(cfg.ConnectionsPath)
+	clipboard := cfg.Clipboard
+	if clipboard == nil {
+		clipboard = export.SystemClipboard{}
+	}
 	return Model{
 		theme:     styles.Default(),
 		help:      h,
@@ -82,6 +92,7 @@ func NewWithConfig(cfg Config) Model {
 		workspace: workspace.New(store, manager),
 		query:     query.New(),
 		results:   result.New(),
+		clipboard: clipboard,
 		focus:     FocusWorkspace,
 	}
 }
@@ -134,6 +145,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.schemaErr = msg.Err
 		return m, nil
 	case query.ExecuteRequestedMsg:
+		m.clearNotice()
 		return m.startQuery(msg.SQL)
 	case queryFinishedMsg:
 		m.query.ReportSuccess(msg.Statements, msg.Result)
@@ -145,6 +157,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case queryFailedMsg:
 		m.query.ReportError(msg.Err)
 		m.lastQueryErr = msg.Err
+		return m, nil
+	case exportDoneMsg:
+		if msg.Err != nil {
+			m.openModal("Export failed", msg.Err.Error())
+			return m, nil
+		}
+		if msg.Clipboard {
+			cmd := m.setNotice("Copied to clipboard")
+			return m, cmd
+		}
+		cmd := m.setNotice("Export complete: " + msg.Path)
+		return m, cmd
+	case statusTimeoutMsg:
+		if msg.Seq == m.noticeSeq {
+			m.notice = ""
+		}
 		return m, nil
 	case sessionEventMsg:
 		return m.routeSessionEvent(msg)
@@ -164,6 +192,62 @@ type queryFinishedMsg struct {
 
 type queryFailedMsg struct {
 	Err error
+}
+
+type exportDoneMsg struct {
+	Path      string
+	Clipboard bool
+	Err       error
+}
+
+type statusTimeoutMsg struct {
+	Seq int
+}
+
+// setNotice shows a transient footer message and schedules its expiry.
+func (m *Model) setNotice(text string) tea.Cmd {
+	m.notice = text
+	m.noticeSeq++
+	seq := m.noticeSeq
+	return tea.Tick(4*time.Second, func(time.Time) tea.Msg { return statusTimeoutMsg{Seq: seq} })
+}
+
+func (m *Model) clearNotice() {
+	m.notice = ""
+	m.noticeSeq++
+}
+
+func (m Model) submitExport() (tea.Model, tea.Cmd) {
+	if !m.export.validate() {
+		return m, nil
+	}
+	dialog := m.export
+	m.export = nil
+
+	payload, ok := m.results.Result()
+	if !ok {
+		cmd := m.setNotice("no results to export")
+		return m, cmd
+	}
+	clipboard := m.clipboard
+	format := dialog.format
+	destination := dialog.destination
+	path := dialog.path.Value()
+
+	return m, func() tea.Msg {
+		if destination == exportToClipboard {
+			text, err := export.Serialize(format, payload)
+			if err != nil {
+				return exportDoneMsg{Err: err}
+			}
+			if err := clipboard.WriteAll(text); err != nil {
+				return exportDoneMsg{Err: err}
+			}
+			return exportDoneMsg{Clipboard: true}
+		}
+		absolute, err := export.WriteFile(path, format, payload)
+		return exportDoneMsg{Path: absolute, Err: err}
+	}
 }
 
 func (m Model) startQuery(sql string) (tea.Model, tea.Cmd) {
@@ -205,6 +289,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, m.keys.Quit) {
 		return m, tea.Quit
 	}
+	if m.export != nil {
+		if key.Matches(msg, m.keys.Close) {
+			m.export = nil
+			return m, nil
+		}
+		if m.export.update(msg) {
+			return m.submitExport()
+		}
+		return m, nil
+	}
 	if m.workspace.CapturesInput() {
 		var cmd tea.Cmd
 		m.workspace, cmd = m.workspace.Update(msg)
@@ -228,6 +322,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Help):
 		m.help.ShowAll = !m.help.ShowAll
 		m.resize()
+		return m, nil
+	case key.Matches(msg, m.keys.Export):
+		if m.focus != FocusResult {
+			return m, nil
+		}
+		if _, ok := m.results.Result(); !ok {
+			cmd := m.setNotice("no results to export")
+			return m, cmd
+		}
+		m.export = newExportDialog()
 		return m, nil
 	}
 	if m.focus == FocusWorkspace {
@@ -311,6 +415,8 @@ func (m Model) View() string {
 	view := lipgloss.JoinVertical(lipgloss.Left, body, status, helpView)
 	if title, body, ok := m.workspace.Modal(); ok {
 		view = m.renderModal(view, lay, modalBox{Title: title, Body: body})
+	} else if m.export != nil {
+		view = m.renderModal(view, lay, modalBox{Title: "Export results", Body: m.export.view()})
 	} else if m.modal != nil {
 		view = m.renderModal(view, lay, *m.modal)
 	}
@@ -326,7 +432,11 @@ func (m Model) statusLine(lay layout) string {
 		parts = append(parts, fmt.Sprintf("schema: %d objects", len(m.schema)))
 	}
 	parts = append(parts, fmt.Sprintf("%d×%d", lay.width, lay.height))
-	return strings.Join(parts, " · ")
+	line := strings.Join(parts, " · ")
+	if m.notice != "" {
+		line = m.notice + " · " + line
+	}
+	return truncate(line, lay.width)
 }
 
 // resize propagates the current pane geometry to child models. Pane content

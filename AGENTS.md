@@ -2,7 +2,7 @@
 
 ## Current state
 
-Completed: §0–§6.3 — bootstrap, `internal/db` (full SQLite; MySQL/Postgres connect only), root TUI shell, workspace pane, query editor, and all three result views (table/CSV/JSON). The format toggle UI (§9) and export (§8) are next; `result.Model.SetFormat` already switches views. MySQL/Postgres schema introspection returns `ErrUnsupportedSchema` until M5. `TODO.md` is authoritative for what is implemented.
+Completed: §0–§6.3 and §8 — bootstrap, `internal/db` (full SQLite; MySQL/Postgres connect only), root TUI shell, workspace pane, query editor, all three result views, and CSV/JSON export to file or clipboard. Next: §9 view-toggle key (completes M3). MySQL/Postgres schema introspection returns `ErrUnsupportedSchema` until M5. `TODO.md` is authoritative for what is implemented.
 
 ## Source of truth
 
@@ -48,6 +48,14 @@ These are easy to violate when writing the first implementation:
 - Activation is message-based: workspace emits `ActivatedMsg`; the root model focuses the query pane, calls `workspace.SetActive`, and starts an async `db.LoadSchema`. Editing the active connection re-emits `ActivatedMsg` so the schema is reloaded.
 - DSNs are masked in the list (`maskDSN`), but the form and the on-disk JSON keep them plaintext.
 - `main` must call `model.Close()` after `tea.NewProgram(...).Run()`; the manager is a pointer inside a copied model, so closing there releases all handles.
+
+## Export gotchas
+
+- `ctrl+e` only opens the dialog when the results pane is focused and a result exists; otherwise it sets a transient notice.
+- The dialog lives in `internal/app/export_dialog.go`; the root model performs the write in a `tea.Cmd` (never in `Update`). Clipboard access goes through `export.Clipboard`, injectable via `Config.Clipboard` (tests use a fake).
+- `export.WriteFile` opens with 0644, writes via `WriteCSV`/`WriteJSON`, checks write/close errors, and returns the absolute path. `export.Serialize` is the clipboard path.
+- Footer notices are sequence-guarded (`noticeSeq`) so a stale 4-second timer cannot clear a newer message.
+- `NULL` is exported as the literal `NULL` (shared with the table view). If that changes, change only `export.WriteCSV`/`FormatValue`.
 
 ## Result gotchas
 
