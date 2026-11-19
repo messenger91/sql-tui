@@ -131,9 +131,9 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 - [x] **Streaming append hook** (§11): table must support appending rows incrementally from `rowsAppendedMsg` without full re-render flicker. (`result.Model.AppendRows` appends raw + formatted rows and preserves the cursor.)
 
 ### 6.2 CSV view
-- [ ] Render `QueryResult` as CSV text inside a `viewport`.
-- [ ] Use `encoding/csv` to a `bytes.Buffer`; quote fields correctly.
-- [ ] Show header row as first line.
+- [x] Render `QueryResult` as CSV text inside a `viewport`.
+- [x] Use `encoding/csv` to a `bytes.Buffer`; quote fields correctly. (Uses `strings.Builder`; serialization lives in `internal/export.WriteCSV`.)
+- [x] Show header row as first line.
 
 ### 6.3 JSON view
 - [ ] Render as a JSON array of objects (column name → value).

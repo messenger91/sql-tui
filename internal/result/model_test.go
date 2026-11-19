@@ -152,3 +152,53 @@ func TestTruncatedStatus(t *testing.T) {
 		t.Fatalf("view missing truncation:\n%s", m.View())
 	}
 }
+
+func TestCSVView(t *testing.T) {
+	m := New()
+	m.SetSize(60, 10)
+	m.SetResult(sampleResult())
+	m.SetFormat(FormatCSV)
+
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "id,name") {
+		t.Fatalf("header missing:\n%s", view)
+	}
+	if !strings.Contains(view, "1,ada") || !strings.Contains(view, "2,NULL") {
+		t.Fatalf("rows missing:\n%s", view)
+	}
+	if !strings.Contains(view, "csv") {
+		t.Fatalf("format missing from status:\n%s", view)
+	}
+}
+
+func TestSetFormatSwitchesBackToTable(t *testing.T) {
+	m := New()
+	m.SetSize(60, 10)
+	m.SetResult(sampleResult())
+
+	m.SetFormat(FormatCSV)
+	if m.Format() != FormatCSV {
+		t.Fatalf("format = %q", m.Format())
+	}
+	m.SetFormat(FormatTable)
+	if m.Format() != FormatTable {
+		t.Fatalf("format = %q", m.Format())
+	}
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "id") || strings.Contains(view, "id,name") {
+		t.Fatalf("table not restored:\n%s", view)
+	}
+}
+
+func TestCSVViewFitsHeight(t *testing.T) {
+	res := sampleResult()
+	m := New()
+	m.SetSize(40, 8)
+	m.SetResult(res)
+	m.SetFormat(FormatCSV)
+
+	lines := strings.Split(ansi.Strip(m.View()), "\n")
+	if len(lines) != 8 {
+		t.Fatalf("lines = %d, want 8", len(lines))
+	}
+}

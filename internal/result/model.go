@@ -2,13 +2,16 @@ package result
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/table"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/messenger91/sql-tui/internal/db"
+	"github.com/messenger91/sql-tui/internal/export"
 )
 
 const (
@@ -16,16 +19,25 @@ const (
 	minColumnWidth = 3
 )
 
+// Format identifies the active rendering of a result set.
+type Format string
+
+const (
+	FormatTable Format = "table"
+	FormatCSV   Format = "csv"
+	FormatJSON  Format = "json"
+)
+
 // Model is the results pane. It keeps the raw result for export (§8) and
-// renders the table view.
+// renders the active format: table, CSV, or JSON.
 type Model struct {
-	table table.Model
+	table    table.Model
+	viewport viewport.Model
 
 	result db.QueryResult
 	has    bool
 
 	format Format
-
 	width  int
 	height int
 }
@@ -42,11 +54,14 @@ func New() Model {
 	t.SetWidth(80)
 	t.SetHeight(8)
 
+	vp := viewport.New(80, 8)
+
 	return Model{
-		table:  t,
-		format: FormatTable,
-		width:  80,
-		height: 10,
+		table:    t,
+		viewport: vp,
+		format:   FormatTable,
+		width:    80,
+		height:   10,
 	}
 }
 
@@ -56,9 +71,9 @@ func (m *Model) SetSize(width, height int) {
 	m.height = max(height, 2)
 	m.table.SetWidth(m.width)
 	m.table.SetHeight(max(m.height-2, 1)) // header + status line
-	if m.has {
-		m.rebuild()
-	}
+	m.viewport.Width = m.width
+	m.viewport.Height = max(m.height-1, 1) // status line
+	m.rebuild()
 }
 
 // Focus enables row navigation.
@@ -67,15 +82,16 @@ func (m *Model) Focus() { m.table.Focus() }
 // Blur disables row navigation.
 func (m *Model) Blur() { m.table.Blur() }
 
-// SetResult installs a new result set and resets the cursor.
+// SetResult installs a new result set and resets scroll/cursor.
 func (m *Model) SetResult(result db.QueryResult) {
 	m.result = result
 	m.has = true
 	m.rebuild()
 	// Set the cursor after rows exist: table clamps the cursor against the
-	// current row count, so doing this before rebuild would leave it at -1.
+	// current row count, so doing this before rebuild leaves it at -1.
 	m.table.SetCursor(0)
 	m.table.GotoTop()
+	m.viewport.SetYOffset(0)
 }
 
 // AppendRows streams more rows into the current result without resetting the
@@ -97,25 +113,42 @@ func (m Model) Result() (db.QueryResult, bool) { return m.result, m.has }
 // Format returns the active result format.
 func (m Model) Format() Format { return m.format }
 
-// Update handles table navigation.
+// SetFormat switches the rendering (§9 cycles this).
+func (m *Model) SetFormat(format Format) {
+	m.format = format
+	m.rebuild()
+}
+
+// Update handles navigation for the active view.
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	var cmd tea.Cmd
-	m.table, cmd = m.table.Update(msg)
+	switch m.format {
+	case FormatCSV, FormatJSON:
+		m.viewport, cmd = m.viewport.Update(msg)
+	default:
+		m.table, cmd = m.table.Update(msg)
+	}
 	return m, cmd
 }
 
-// View renders the table (or an execution placeholder) plus its status line.
+// View renders the active view plus the status line.
 func (m Model) View() string {
 	if !m.has {
 		return "no results yet"
 	}
 	if len(m.result.Columns) == 0 {
-		return lipgloss.JoinVertical(lipgloss.Left,
-			"statement executed",
-			m.statusLine(),
-		)
+		return lipgloss.JoinVertical(lipgloss.Left, "statement executed", m.statusLine())
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, m.table.View(), m.statusLine())
+
+	var body string
+	switch m.format {
+	case FormatCSV, FormatJSON:
+		body = m.viewport.View()
+	default:
+		body = m.table.View()
+	}
+	body = lipgloss.NewStyle().Height(max(m.height-1, 1)).Render(body)
+	return lipgloss.JoinVertical(lipgloss.Left, body, m.statusLine())
 }
 
 func (m Model) statusLine() string {
@@ -123,34 +156,51 @@ func (m Model) statusLine() string {
 }
 
 func (m Model) summary() string {
-	line := summaryText(m.result, string(m.format))
+	rows := "rows"
+	if m.result.RowCount == 1 {
+		rows = "row"
+	}
+	line := fmt.Sprintf("%d %s · %s · %s",
+		m.result.RowCount, rows, export.FormatElapsed(m.result.Elapsed), m.format)
 	if m.result.Truncated {
 		line += " · truncated"
 	}
 	return line
 }
 
-func summaryText(result db.QueryResult, format string) string {
-	rows := "rows"
-	if result.RowCount == 1 {
-		rows = "row"
-	}
-	return fmt.Sprintf("%d %s · %s · %s", result.RowCount, rows, FormatElapsed(result.Elapsed), format)
-}
-
 func (m *Model) rebuild() {
+	if !m.has {
+		return
+	}
 	if len(m.result.Columns) == 0 {
 		m.table.SetColumns(nil)
 		m.table.SetRows(nil)
+		m.viewport.SetContent("")
 		return
 	}
 
+	switch m.format {
+	case FormatCSV:
+		text, err := export.CSVString(m.result)
+		if err != nil {
+			text = "error: " + err.Error()
+		}
+		m.viewport.SetContent(strings.TrimRight(text, "\n"))
+	case FormatJSON:
+		// Filled in by §6.3.
+		m.viewport.SetContent("JSON view is not implemented yet")
+	default:
+		m.rebuildTable()
+	}
+}
+
+func (m *Model) rebuildTable() {
 	columns := make([]table.Column, len(m.result.Columns))
 	natural := make([]int, len(m.result.Columns))
 	for i, name := range m.result.Columns {
 		natural[i] = ansi.StringWidth(name)
 	}
-	rows := ValueRows(m.result)
+	rows := export.ValueRows(m.result)
 	for _, row := range rows {
 		for i, cell := range row {
 			if width := ansi.StringWidth(cell); width > natural[i] {

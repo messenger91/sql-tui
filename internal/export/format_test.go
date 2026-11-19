@@ -1,4 +1,4 @@
-package result
+package export
 
 import (
 	"testing"
@@ -53,8 +53,11 @@ func TestValueRows(t *testing.T) {
 	}
 }
 
-func TestBinaryBlobIsHex(t *testing.T) {
-	if got := FormatValue([]byte{0xff, 0x00}); got != "0xff00" {
-		t.Fatalf("blob = %q", got)
+func TestFormatElapsed(t *testing.T) {
+	if got := FormatElapsed(200 * time.Microsecond); got != "<1ms" {
+		t.Fatalf("elapsed = %q", got)
+	}
+	if got := FormatElapsed(1500 * time.Millisecond); got != "1.5s" {
+		t.Fatalf("elapsed = %q", got)
 	}
 }
