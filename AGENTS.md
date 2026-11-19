@@ -2,7 +2,7 @@
 
 ## Current state
 
-Completed: §0–§2 (bootstrap, `internal/db` with full SQLite support) plus a placeholder `cmd/sql-tui/main.go`. `internal/app` and the three-pane shell are still §3 work. MySQL/Postgres connect but schema introspection returns `ErrUnsupportedSchema` until M5. `TODO.md` is the authoritative plan; check it for what is actually implemented.
+Completed: §0–§3 — bootstrap, `internal/db` (full SQLite; MySQL/Postgres connect only), and the root TUI shell (`internal/app`, `internal/styles`). Workspace/query/result panes are static placeholders; add/select/execute behavior starts at M2 (§4–§6). MySQL/Postgres schema introspection returns `ErrUnsupportedSchema` until M5. `TODO.md` is authoritative for what is implemented.
 
 ## Source of truth
 
@@ -39,6 +39,13 @@ These are easy to violate when writing the first implementation:
 - **Inline editing is gated.** It is enabled only when the connection has `ReadOnly == false` *and* the result maps to a single table with a detectable PK/unique key. Pending edits are applied in one transaction with rollback and `RowsAffected == 1` checks; never write immediately on a cell edit.
 - **Goroutine hygiene is testable.** Cancellation must use `context`, runners must be tracked and drained on quit (`CloseAll`) and covered by `go test -race` plus `go.uber.org/goleak` in the session package.
 - **Drivers are a registry, not ad-hoc imports.** `internal/db` owns a driver switch/registry exposing `Connect`, `Execute`, `LoadSchema`, and a `Dialect` value used by §12 DML generation.
+
+## App shell gotchas
+
+- Layout is computed from `WindowSizeMsg`; before the first resize it falls back to 80×24. `layout()` derives help height from the rendered help view, so expanding `?` full help shrinks the pane area — do not hardcode a one-line footer.
+- The modal compositor (`overlay.go`) uses `github.com/charmbracelet/x/ansi` (already a transitive dep of Lip Gloss) for cell-accurate splicing. It replaces the horizontal span and keeps background margins intact; tests cover ANSI-styled backgrounds.
+- While a modal is open it swallows all keys except `ctrl+c` (quit). `esc` closes it.
+- Focus cycles `workspace → query → results` with `tab`; `shift+tab` reverses.
 
 ## `internal/db` gotchas
 

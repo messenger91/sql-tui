@@ -72,15 +72,17 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 
 ## 3. Root TUI shell & navigation
 
-- [ ] Implement root model in `internal/app`:
+- [x] Implement root model in `internal/app`:
   - `Init()` → load connections, focus workspace.
   - `Update()` → route `tea.KeyMsg` to active view; handle global keys (`ctrl+c` quit, `tab` cycle pane, `?` help).
   - `View()` → `lipgloss.JoinHorizontal` / `JoinVertical` for the three-pane layout.
-- [ ] Define a `Focus` enum: `focusWorkspace`, `focusQuery`, `focusResult`; render focused pane with a distinct border color.
-- [ ] **Message router**: root model dispatches custom msgs (`sessionEventMsg{sessionID, event}`) to the owning session/tab — required by §11.
-- [ ] Use `bubbles/help` + `bubbles/key` to auto-generate the footer keybinding bar per active view.
-- [ ] Handle `tea.WindowSizeMsg` → propagate width/height to child components and recompute layouts.
-- [ ] **Overlay pattern**: implement a generic modal renderer (centered box, dimmed background) for favorites, export, schema browser, and error dialogs.
+  - Connection loading itself lands with §4; `Init` is a no-op for now.
+- [x] Define a `Focus` enum: `focusWorkspace`, `focusQuery`, `focusResult`; render focused pane with a distinct border color.
+- [x] **Message router**: root model dispatches custom msgs (`sessionEventMsg{sessionID, event}`) to the owning session/tab — required by §11.
+  - Skeleton in place (`sessionEventMsg` routed by `SessionID`); the session lookup is added with §11.1.
+- [x] Use `bubbles/help` + `bubbles/key` to auto-generate the footer keybinding bar per active view.
+- [x] Handle `tea.WindowSizeMsg` → propagate width/height to child components and recompute layouts.
+- [x] **Overlay pattern**: implement a generic modal renderer (centered box, dimmed background) for favorites, export, schema browser, and error dialogs.
 
 ---
 
