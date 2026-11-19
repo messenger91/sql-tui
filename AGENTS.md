@@ -2,7 +2,7 @@
 
 ## Current state
 
-Completed: §0–§9 — bootstrap, `internal/db` (SQLite, MySQL, and Postgres: connect, execute, schema), root TUI shell, workspace pane, query editor, table/CSV/JSON result views, view toggle, and export to file or clipboard. **M3, M4, and M5 are complete; §10 and §11 are complete; §12.1–§12.2 are complete.** Next: §12.3 DML generation + preview. `TODO.md` is authoritative for what is implemented.
+Completed: §0–§9 — bootstrap, `internal/db` (SQLite, MySQL, and Postgres: connect, execute, schema), root TUI shell, workspace pane, query editor, table/CSV/JSON result views, view toggle, and export to file or clipboard. **M3, M4, and M5 are complete; §10 and §11 are complete; §12.1–§12.3 are complete.** Next: §12.4 transactional apply. `TODO.md` is authoritative for what is implemented.
 
 ## Source of truth
 
@@ -50,6 +50,14 @@ These are easy to violate when writing the first implementation:
 - Activation is message-based: workspace emits `ActivatedMsg`; the root model focuses the query pane, calls `workspace.ActivationSucceeded` (which also clears the `connecting…` spinner), and starts an async `db.LoadSchema`. Editing the active connection re-emits `ActivatedMsg` so the schema is reloaded. If a new activation message is ever added, clear `busy` there too or the spinner runs forever.
 - DSNs are masked in the list (`maskDSN`), but the form and the on-disk JSON keep them plaintext.
 - `main` must call `model.Close()` after `tea.NewProgram(...).Run()`; the manager is a pointer inside a copied model, so closing there releases all handles.
+
+## DML / preview gotchas
+
+- `session.Changes()` is the bridge from `Pending` to `result.Change`; it requires editable state, the loaded result, and `Session.Driver` (copied from the connection like `ReadOnly`).
+- Row order drives statement order; delete rows take precedence over cell edits, duplicates include every result column with pending edits overlaid, and no-op edits are skipped.
+- `result.BuildStatements` never interpolates values; identifiers go through `db.Dialect.QuoteIdent`. MySQL booleans become `1/0`; time/bytes pass through to `database/sql`.
+- The `p` preview lists SQL + args and is gated on pending changes and the table view. `enter` currently reports that transactional apply arrives in §12.4 — replace that stub, do not add a second apply path.
+- Do not build SQL strings anywhere else; extend `result/dml.go` instead.
 
 ## Cell editing gotchas
 

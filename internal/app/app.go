@@ -67,6 +67,7 @@ type Model struct {
 	browser       *schemaBrowser
 	cellEdit      *cellEditor
 	rowMenu       *rowMenu
+	preview       *previewState
 	notice        string
 	noticeSeq     int
 
@@ -470,6 +471,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.rowMenu != nil {
 		return m.handleRowMenuKey(msg)
 	}
+	if m.preview != nil {
+		return m.handlePreviewKey(msg)
+	}
 	// The autocomplete popup owns tab (accept), runes (continue typing), and
 	// must not let global bindings swallow them.
 	if m.focus == FocusQuery {
@@ -618,6 +622,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 						m.rowMenu = &rowMenu{row: row}
 						return m, nil
 					}
+				case "p":
+					return m.openPreview(s)
 				case "ctrl+z":
 					if row, _, _, ok := s.Results.SelectedCell(); ok {
 						s.Pending.RevertRow(row)
@@ -697,12 +703,14 @@ func (m *Model) focusSessionForConnection(connection db.Connection) {
 	if s := m.activeSession(); s != nil && s.ConnectionID == "" && !s.Running() {
 		s.ConnectionID = connection.ID
 		s.ReadOnly = connection.ReadOnly
+		s.Driver = connection.Driver
 		m.applySchema(s)
 		return
 	}
 	for _, s := range m.sessions.Sessions() {
 		if s.ConnectionID == connection.ID {
 			s.ReadOnly = connection.ReadOnly
+			s.Driver = connection.Driver
 			m.sessions.SetActive(s.ID)
 			m.applySchema(s)
 			return
@@ -710,22 +718,27 @@ func (m *Model) focusSessionForConnection(connection db.Connection) {
 	}
 	s := m.sessions.New(connection.ID)
 	s.ReadOnly = connection.ReadOnly
+	s.Driver = connection.Driver
 	m.applySchema(s)
 }
 
 func (m *Model) newTab() {
 	connectionID := ""
 	readOnly := true
+	driver := db.Driver("")
 	if s := m.activeSession(); s != nil {
 		connectionID = s.ConnectionID
 		readOnly = s.ReadOnly
+		driver = s.Driver
 	}
 	if connectionID == "" && m.active != nil {
 		connectionID = m.active.ID
 		readOnly = m.active.ReadOnly
+		driver = m.active.Driver
 	}
 	s := m.sessions.New(connectionID)
 	s.ReadOnly = readOnly
+	s.Driver = driver
 	m.applySchema(s)
 	m.focus = FocusQuery
 	m.syncFocus()
@@ -736,12 +749,15 @@ func (m *Model) closeSession(id session.ID) {
 	if m.sessions.Len() == 0 {
 		connectionID := ""
 		readOnly := true
+		driver := db.Driver("")
 		if m.active != nil {
 			connectionID = m.active.ID
 			readOnly = m.active.ReadOnly
+			driver = m.active.Driver
 		}
 		s := m.sessions.New(connectionID)
 		s.ReadOnly = readOnly
+		s.Driver = driver
 		m.applySchema(s)
 	}
 	m.syncFocus()
@@ -883,6 +899,8 @@ func (m Model) View() string {
 		view = m.renderModal(view, lay, modalBox{Title: title, Body: m.cellEdit.view()})
 	} else if m.rowMenu != nil {
 		view = m.renderModal(view, lay, modalBox{Title: "Row actions", Body: m.rowMenu.view()})
+	} else if m.preview != nil {
+		view = m.renderModal(view, lay, modalBox{Title: "Preview changes", Body: m.preview.view()})
 	} else if m.modal != nil {
 		view = m.renderModal(view, lay, *m.modal)
 	}

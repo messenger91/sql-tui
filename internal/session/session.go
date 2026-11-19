@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/messenger91/sql-tui/internal/db"
 	"github.com/messenger91/sql-tui/internal/query"
 	"github.com/messenger91/sql-tui/internal/result"
 )
@@ -40,6 +41,7 @@ type Session struct {
 	StartedAt time.Time
 
 	ReadOnly    bool
+	Driver      db.Driver
 	LastSQL     string
 	Editability Editability
 	Pending     *Pending

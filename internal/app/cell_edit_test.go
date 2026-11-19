@@ -192,3 +192,54 @@ func TestNewQueryClearsPending(t *testing.T) {
 		t.Fatalf("status still shows pending:\n%s", m.View())
 	}
 }
+
+func TestPreviewGeneratesDML(t *testing.T) {
+	m := editableWithRows(t, false)
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	m.cellEdit.input.SetValue("42")
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	if m.preview == nil {
+		t.Fatal("p did not open the preview")
+	}
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "Preview changes") || !strings.Contains(view, `UPDATE "users" SET "id" = ? WHERE "id" = ?`) {
+		t.Fatalf("preview missing SQL:\n%s", view)
+	}
+	if !strings.Contains(view, "args:") {
+		t.Fatalf("preview missing args:\n%s", view)
+	}
+
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.preview != nil {
+		t.Fatal("esc did not close the preview")
+	}
+}
+
+func TestPreviewWithoutPending(t *testing.T) {
+	m := editableWithRows(t, false)
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	if m.preview != nil {
+		t.Fatal("preview opened without pending changes")
+	}
+	if !strings.Contains(m.notice, "no pending changes") {
+		t.Fatalf("notice = %q", m.notice)
+	}
+}
+
+func TestPreviewEnterDefersApply(t *testing.T) {
+	m := editableWithRows(t, false)
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	m.cellEdit.input.SetValue("42")
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.preview != nil {
+		t.Fatal("enter did not close the preview")
+	}
+	if !strings.Contains(m.notice, "§12.4") {
+		t.Fatalf("notice = %q", m.notice)
+	}
+}

@@ -301,15 +301,15 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 - [x] Row-level actions (menu via `m`): `Set cell to NULL`, `Duplicate row` (INSERT), `Delete row` (DELETE) — each becomes a pending change, not an immediate DB write.
 
 ### 12.3 DML generation
-- [ ] `internal/result/dml.go`: build `Statement{SQL, Args []any}` from pending changes:
+- [x] `internal/result/dml.go`: build `Statement{SQL, Args []any}` from pending changes: (`session.Changes` converts `Pending` + `Editability` into `result.Change` values.)
   - `UPDATE <table> SET <col> = <ph>, … WHERE <pk> = <ph> AND …`
   - `DELETE FROM <table> WHERE <pk> = <ph> AND …`
   - `INSERT INTO <table> (<cols>) VALUES (<ph>, …)`
-- [ ] Placeholders by dialect (§2): `?` for MySQL/SQLite, `$1..$n` for Postgres.
-- [ ] Identifier quoting: backticks (MySQL), double quotes (Postgres/SQLite) — escape embedded quote chars by doubling.
-- [ ] Value marshalling: `nil` → `NULL`, `time.Time` → dialect-accepted string, `[]byte` → driver handles, booleans → `1/0` for MySQL, `true/false` for Postgres.
-- [ ] **Preview overlay** (`p` or automatic before apply): show the generated SQL + args in a `viewport`; `enter` applies, `esc` cancels.
-- [ ] Always use placeholders — never string-interpolate user values into SQL (note this explicitly to prevent future regressions).
+- [x] Placeholders by dialect (§2): `?` for MySQL/SQLite, `$1..$n` for Postgres.
+- [x] Identifier quoting: backticks (MySQL), double quotes (Postgres/SQLite) — escape embedded quote chars by doubling.
+- [x] Value marshalling: `nil` → `NULL`, `time.Time` → dialect-accepted string, `[]byte` → driver handles, booleans → `1/0` for MySQL, `true/false` for Postgres. (`time.Time`/`[]byte` are passed through to `database/sql`; booleans are converted for MySQL.)
+- [x] **Preview overlay** (`p` or automatic before apply): show the generated SQL + args in a `viewport`; `enter` applies, `esc` cancels. (Preview implemented; `enter` is wired to the §12.4 transactional apply and currently reports that it is next.)
+- [x] Always use placeholders — never string-interpolate user values into SQL (note this explicitly to prevent future regressions).
 
 ### 12.4 Transactional apply
 - [ ] Apply all pending changes for the focused session in one `db.BeginTx`:
