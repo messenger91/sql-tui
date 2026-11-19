@@ -199,6 +199,25 @@ func (m *Model) UpdateStats(rowCount, fetched int, elapsed time.Duration, trunca
 	m.rebuild()
 }
 
+// ReplaceRowValues swaps a raw result row in place (post-apply refresh).
+func (m *Model) ReplaceRowValues(index int, raw []any) {
+	if index < 0 || index >= len(m.result.Rows) {
+		return
+	}
+	m.result.Rows[index] = append([]any(nil), raw...)
+	m.rebuild()
+}
+
+// RemoveRowResult deletes a raw result row in place (post-apply refresh).
+func (m *Model) RemoveRowResult(index int) {
+	if index < 0 || index >= len(m.result.Rows) {
+		return
+	}
+	m.result.Rows = append(m.result.Rows[:index], m.result.Rows[index+1:]...)
+	m.result.RowCount = len(m.result.Rows)
+	m.rebuild()
+}
+
 // SetStreaming toggles the streaming status label. Turning it off rebuilds
 // deferred CSV/JSON views once the result is complete.
 func (m *Model) SetStreaming(streaming bool) {

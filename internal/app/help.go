@@ -45,12 +45,16 @@ func helpText() string {
 		"  ctrl+z / ctrl+⇧z  revert row / all",
 		"  r                 refresh after a conflict",
 		"",
+		"documents",
+		"  esc / q / enter   close (table info, DBML)",
+		"  c                 copy document to clipboard",
+		"",
 		faint.Render("esc closes this menu"),
 	}
 	var b strings.Builder
 	for _, line := range sections {
 		switch line {
-		case "global", "connections", "query", "results":
+		case "global", "connections", "query", "results", "documents":
 			b.WriteString(section.Render(line))
 		default:
 			b.WriteString(line)

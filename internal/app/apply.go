@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/messenger91/sql-tui/internal/db"
 	"github.com/messenger91/sql-tui/internal/session"
 )
 
@@ -16,6 +17,8 @@ const applyTimeout = 30 * time.Second
 type applyDoneMsg struct {
 	SessionID session.ID
 	Outcome   session.ApplyOutcome
+	Mutations []session.RowMutation
+	Refresh   bool // mutations computed successfully; view can refresh in place
 }
 
 // startApply snapshots pending changes and runs the transaction in a command.
@@ -38,11 +41,29 @@ func (m Model) startApply(s *session.Session) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	sessionID := s.ID
+	// Snapshot the result for the in-place post-commit refresh.
+	snapshot, hasSnapshot := s.Results.Result()
+	if hasSnapshot {
+		snapshot = db.QueryResult{Columns: snapshot.Columns, Rows: snapshot.Rows}
+	}
 
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), applyTimeout)
 		defer cancel()
-		return applyDoneMsg{SessionID: sessionID, Outcome: plan.Apply(ctx, handle)}
+		outcome := plan.Apply(ctx, handle)
+		msg := applyDoneMsg{SessionID: sessionID, Outcome: outcome}
+		if outcome.Err != nil {
+			return msg
+		}
+		if hasSnapshot {
+			mutations, err := plan.RefreshMutations(ctx, handle, snapshot)
+			if err == nil {
+				msg.Mutations = mutations
+				msg.Refresh = true
+			}
+			// Refresh errors fall back to re-running the original query.
+		}
+		return msg
 	}
 }
 
@@ -71,13 +92,30 @@ func (m Model) handleApplyDone(msg applyDoneMsg) (tea.Model, tea.Cmd) {
 	m.syncPending(s)
 	m.needsRefresh = false
 
-	if s.LastSQL == "" {
-		cmd := m.setNotice(fmt.Sprintf("%d statement(s) applied", outcome.Applied))
+	noticeText := fmt.Sprintf("%d statement(s) applied", outcome.Applied)
+	if msg.Refresh && len(msg.Mutations) > 0 && s.LastSQL != "" {
+		// In-place refresh: replay the row mutations, keep editability.
+		for _, mutation := range msg.Mutations {
+			switch mutation.Kind {
+			case session.RowReplace:
+				s.Results.ReplaceRowValues(mutation.Index, mutation.Raw)
+			case session.RowRemove:
+				s.Results.RemoveRowResult(mutation.Index)
+			default:
+				s.Results.AppendRows([][]any{mutation.Raw})
+			}
+		}
+		cmd := m.setNotice(noticeText)
 		return m, cmd
 	}
-	// Re-run the original query to reflect the committed data (MVP refresh).
+
+	if s.LastSQL == "" {
+		cmd := m.setNotice(noticeText)
+		return m, cmd
+	}
+	// Fallback refresh: re-run the original query.
 	updated, refreshCmd := m.startQuery(s.LastSQL)
 	model := updated.(Model)
-	noticeCmd := model.setNotice(fmt.Sprintf("%d statement(s) applied", outcome.Applied))
+	noticeCmd := model.setNotice(noticeText)
 	return model, tea.Batch(refreshCmd, noticeCmd)
 }

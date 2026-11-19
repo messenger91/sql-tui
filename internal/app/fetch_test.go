@@ -1,12 +1,16 @@
 package app
 
 import (
+	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/messenger91/sql-tui/internal/db"
+	"github.com/messenger91/sql-tui/internal/session"
 	"github.com/messenger91/sql-tui/internal/workspace"
 )
 
@@ -150,5 +154,123 @@ func TestTableListHidesDescription(t *testing.T) {
 	}
 	if !strings.Contains(view, "users") {
 		t.Fatalf("table list missing users:\n%s", view)
+	}
+}
+
+func TestSchemaBrowserOpensTableInfo(t *testing.T) {
+	m := activateEditable(t, false)
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyCtrlB})
+	if m.browser == nil {
+		t.Fatal("browser did not open")
+	}
+	m, cmd := appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	done, ok := cmd().(tableInfoDoneMsg)
+	if !ok || done.Info == nil || done.Info.Table != "users" {
+		t.Fatalf("done msg = %+v", done)
+	}
+	m, _ = appUpdate(t, m, done)
+	if m.doc == nil || !strings.Contains(ansi.Strip(m.doc.viewport.View()), "Columns") {
+		t.Fatalf("table info not opened from the browser:\n%s", m.View())
+	}
+}
+
+func TestSchemaBrowserOpensDBML(t *testing.T) {
+	m := activateEditable(t, false)
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyCtrlB})
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'D'}})
+	if m.doc == nil || !strings.Contains(ansi.Strip(m.doc.viewport.View()), "Table users {") {
+		t.Fatal("DBML not opened from the browser")
+	}
+}
+
+func TestDocCopiesToClipboard(t *testing.T) {
+	clipboard := &fakeClipboard{}
+	dir := t.TempDir()
+	m := NewWithConfig(Config{
+		ConnectionsPath: filepath.Join(dir, "connections.json"),
+		FavoritesPath:   filepath.Join(dir, "favorites.json"),
+		HistoryPath:     filepath.Join(dir, "history.json"),
+		Clipboard:       clipboard,
+	})
+	m, _ = appUpdate(t, m, tea.WindowSizeMsg{Width: 100, Height: 24})
+	connection := db.Connection{ID: "c1", Name: "local", Driver: db.DriverSQLite, DSN: ":memory:"}
+	if _, err := m.manager.Open(context.Background(), connection); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = m.manager.CloseAll() })
+	m, _ = appUpdate(t, m, workspace.ActivatedMsg{Connection: connection})
+	m.schema.Store("c1", editabilityTables(), nil)
+	m, _ = appUpdate(t, m, schemaLoadedMsg{ConnectionID: "c1", Tables: editabilityTables()})
+	m.focus = FocusWorkspace
+	m, cmd := appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'D'}})
+	for _, msg := range collectCmds(cmd) {
+		m, _ = appUpdate(t, m, msg)
+	}
+	if m.doc == nil {
+		t.Fatal("DBML doc did not open")
+	}
+
+	m, cmd = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	msg, ok := cmd().(docCopiedMsg)
+	if !ok {
+		t.Fatalf("unexpected message %T", msg)
+	}
+	m, _ = appUpdate(t, m, msg)
+	if !strings.Contains(clipboard.text, "Table users {") {
+		t.Fatalf("clipboard = %q", clipboard.text)
+	}
+	if !strings.Contains(m.notice, "Copied to clipboard") {
+		t.Fatalf("notice = %q", m.notice)
+	}
+}
+
+func TestInPlaceRefreshAfterApply(t *testing.T) {
+	m := editableWithRows(t, false)
+	s := m.activeSession()
+	row, _, _, _ := s.Results.SelectedCell()
+
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	m.cellEdit.input.SetValue("99")
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	m = runMsgSync(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if !s.Pending.Empty() {
+		t.Fatalf("pending not cleared: %+v", s.Pending)
+	}
+	res, ok := s.Results.Result()
+	if !ok || len(res.Rows) != 2 {
+		t.Fatalf("result = %+v", res)
+	}
+	if res.Rows[row][0] != int64(99) {
+		t.Fatalf("row %d not refreshed in place: %v", row, res.Rows[row])
+	}
+	if s.State != session.StateDone || s.LastSQL == "" {
+		t.Fatalf("session state changed unexpectedly: %+v", s)
+	}
+	// The view refreshed in place — no re-run (still the same query title).
+	if !strings.Contains(s.Title, "SELECT") {
+		t.Fatalf("title = %q", s.Title)
+	}
+}
+
+func TestInPlaceRefreshDelete(t *testing.T) {
+	m := editableWithRows(t, false)
+	s := m.activeSession()
+	row, _, _, _ := s.Results.SelectedCell()
+
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	_ = runMsgSync(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	res, ok := s.Results.Result()
+	if !ok || len(res.Rows) != 1 {
+		t.Fatalf("result = %+v", res)
+	}
+	if row < len(res.Rows) && res.Rows[row][0] == int64(2) {
+		t.Fatalf("deleted row still present at %d: %v", row, res.Rows[row])
 	}
 }

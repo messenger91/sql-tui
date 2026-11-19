@@ -19,6 +19,7 @@ import (
 // and DBML rendering.
 type docViewer struct {
 	title    string
+	body     string
 	viewport viewport.Model
 }
 
@@ -26,7 +27,22 @@ func (m *Model) openDoc(title, body string) {
 	lay := m.layout()
 	v := viewport.New(max(lay.width-10, 10), max(lay.height-6, 3))
 	v.SetContent(body)
-	m.doc = &docViewer{title: title, viewport: v}
+	m.doc = &docViewer{title: title, body: body, viewport: v}
+}
+
+type docCopiedMsg struct {
+	Err error
+}
+
+func (m Model) copyDoc() tea.Cmd {
+	if m.doc == nil {
+		return nil
+	}
+	body := m.doc.body
+	clipboard := m.clipboard
+	return func() tea.Msg {
+		return docCopiedMsg{Err: clipboard.WriteAll(body)}
+	}
 }
 
 func (m Model) handleDocKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -34,6 +50,8 @@ func (m Model) handleDocKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc", "q", "enter":
 		m.doc = nil
 		return m, nil
+	case "c":
+		return m, m.copyDoc()
 	}
 	var cmd tea.Cmd
 	m.doc.viewport, cmd = m.doc.viewport.Update(msg)
@@ -170,7 +188,7 @@ func formatTableInfo(info *db.TableInfo) string {
 }
 
 // openDBML renders the active connection's cached schema as DBML.
-func (m Model) openDBML() (tea.Model, tea.Cmd) {
+func (m *Model) openDBML() (tea.Model, tea.Cmd) {
 	connectionID := ""
 	if s := m.activeSession(); s != nil {
 		connectionID = s.ConnectionID
@@ -179,19 +197,19 @@ func (m Model) openDBML() (tea.Model, tea.Cmd) {
 	}
 	if connectionID == "" {
 		cmd := m.setNotice("select a connection first")
-		return m, cmd
+		return *m, cmd
 	}
 	entry, ok := m.schema.Get(connectionID)
 	if !ok || len(entry.Tables) == 0 {
 		cmd := m.setNotice("schema not loaded yet")
-		return m, cmd
+		return *m, cmd
 	}
 	title := "DBML · " + connectionLabelName(m, connectionID)
 	m.openDoc(title, db.DBML(entry.Tables))
-	return m, nil
+	return *m, nil
 }
 
-func connectionLabelName(m Model, connectionID string) string {
+func connectionLabelName(m *Model, connectionID string) string {
 	if m.active != nil && m.active.ID == connectionID {
 		return m.active.Name
 	}

@@ -261,6 +261,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleApplyDone(msg)
 	case tableInfoDoneMsg:
 		return m.handleTableInfoDone(msg)
+	case docCopiedMsg:
+		if msg.Err != nil {
+			m.openModal("Copy failed", msg.Err.Error())
+			return m, nil
+		}
+		cmd := m.setNotice("Copied to clipboard")
+		return m, cmd
 	case explainDoneMsg:
 		if msg.Err != nil {
 			m.openModal("Explain failed", msg.Err.Error())
@@ -969,6 +976,12 @@ func (m Model) computeEditability(s *session.Session) session.Editability {
 func (m Model) handleBrowserKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	action := m.browser.Update(msg)
 	switch {
+	case action.info != "":
+		m, cmd := m.startTableInfo(action.info)
+		return m, cmd
+	case action.dbml:
+		_, cmd := m.openDBML()
+		return m, cmd
 	case action.insert != "":
 		if s := m.activeSession(); s != nil {
 			s.Editor.InsertText(action.insert)

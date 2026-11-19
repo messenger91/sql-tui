@@ -162,8 +162,8 @@ internal/styles/    Lip Gloss theme
 
 - Editing requires a writable connection and a simple `SELECT … FROM <table>`
   with a primary key present in the result.
-- Pending edits are applied transactionally; the post-commit view refreshes by
-  re-running the original query.
+- Pending edits are applied transactionally; the post-commit view refreshes the
+  affected rows in place by re-reading them by primary key.
 - Subquery-aware autocomplete scoping and per-cell coloring are best-effort.
 - Keyring credential storage and Parquet export are not implemented because
   they require additional dependencies; DSNs are plaintext at 0600 and exports

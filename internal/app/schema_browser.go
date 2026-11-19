@@ -37,6 +37,8 @@ type browserAction struct {
 	close   bool
 	refresh bool
 	insert  string
+	info    string // table/view name for the info viewer
+	dbml    bool
 }
 
 // schemaBrowser is the ctrl+b overlay: an expandable schema tree with fuzzy
@@ -259,6 +261,16 @@ func (b *schemaBrowser) Update(msg tea.KeyMsg) browserAction {
 		return browserAction{close: true}
 	case "ctrl+r":
 		return browserAction{refresh: true}
+	case "D":
+		return browserAction{dbml: true}
+	case "i":
+		if row, ok := b.selected(); ok {
+			name := row.name
+			if row.kind == browserColumn && row.table != "" {
+				name = row.table
+			}
+			return browserAction{info: name}
+		}
 	case "up", "k":
 		b.move(-1)
 	case "down", "j":

@@ -84,7 +84,7 @@ These are easy to violate when writing the first implementation:
 - The `p` preview lists SQL + args and is gated on pending changes and the table view. `enter` runs `startApply`; there is no other apply path.
 - Apply snapshots the loaded row on the first edit (`snapshotRow`); `Session.ApplyPlan` re-reads rows inside the transaction and aborts with `ErrRowChanged` on drift. Pending edits survive apply failures and conflicts.
 - `UPDATE`/`DELETE` must affect exactly one row; otherwise the transaction rolls back with `ErrRowsAffected`.
-- On success the app clears pending, reports `N statement(s) applied`, and re-runs the original query for the refreshed view (MVP; in-place cell refresh is still a TODO refinement).
+- On success the app clears pending, reports `N statement(s) applied`, and refreshes the view **in place**: the apply command also runs `ApplyPlan.RefreshMutations` (re-reads affected rows by PK, handling PK edits) and returns `RowMutation`s that the handler replays on `result.Model` via `ReplaceRowValues`/`RemoveRowResult`/`AppendRows` (removes sorted descending). Refresh failures fall back to the query re-run.
 - Conflict modal instructs the user to close it and press `r` in the results pane; `r` clears pending and re-runs `Session.LastSQL`.
 - Do not build SQL strings anywhere else; extend `result/dml.go` instead.
 
