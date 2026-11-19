@@ -1,0 +1,4 @@
+/bin/
+/sql-tui
+*.test
+coverage.out
