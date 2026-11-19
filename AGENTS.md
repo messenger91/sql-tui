@@ -2,7 +2,7 @@
 
 ## Current state
 
-Completed: all planned sections — bootstrap, `internal/db` (SQLite/MySQL/Postgres connect/execute/schema), root shell, workspace, query editor, result views/export, favorites, schema browser + autocomplete, multi-tab async streaming, inline editing with transactional apply, plus mouse support and narrow-terminal collapse. **M9 and the dependency-free §15 stretch items are complete.** Remaining unchecked items need either a product decision or a new dependency: keyring credential storage, Parquet export, and virtualized >100k tables. `TODO.md` is authoritative for details.
+Completed: all planned sections plus every follow-up batch — bootstrap, `internal/db` (SQLite/MySQL/Postgres connect/execute/schema/URL DSNs), root shell, workspace, query editor (highlight), result views (JSON highlight, column layout, stats), export (CSV/JSON/Markdown), favorites, persistent history, schema browser + autocomplete, multi-tab async streaming, inline editing with transactional apply and in-place refresh, table info + DBML, command menu, help modal, and mouse support. The only unchecked TODO items are keyring storage, Parquet export, and virtualized >100k tables — all blocked on dependency/product decisions.
 
 ## Source of truth
 
