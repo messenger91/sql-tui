@@ -3,15 +3,16 @@ package app
 import "github.com/charmbracelet/bubbles/key"
 
 type keyMap struct {
-	Cycle      key.Binding
-	CyclePrev  key.Binding
-	Help       key.Binding
-	Quit       key.Binding
-	Close      key.Binding
-	Export     key.Binding
-	ViewFormat key.Binding
-	SaveFav    key.Binding
-	BrowseFav  key.Binding
+	Cycle        key.Binding
+	CyclePrev    key.Binding
+	Help         key.Binding
+	Quit         key.Binding
+	Close        key.Binding
+	Export       key.Binding
+	ViewFormat   key.Binding
+	SaveFav      key.Binding
+	BrowseFav    key.Binding
+	BrowseSchema key.Binding
 }
 
 func defaultKeyMap() keyMap {
@@ -52,6 +53,10 @@ func defaultKeyMap() keyMap {
 			key.WithKeys("ctrl+f"),
 			key.WithHelp("ctrl+f", "favorites"),
 		),
+		BrowseSchema: key.NewBinding(
+			key.WithKeys("ctrl+b"),
+			key.WithHelp("ctrl+b", "schema"),
+		),
 	}
 }
 
@@ -65,7 +70,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Cycle, k.CyclePrev},
 		{k.Export, k.ViewFormat},
-		{k.SaveFav, k.BrowseFav},
+		{k.SaveFav, k.BrowseFav, k.BrowseSchema},
 		{k.Help, k.Close},
 		{k.Quit},
 	}

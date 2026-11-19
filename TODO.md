@@ -42,7 +42,7 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
   - SQLite: `modernc.org/sqlite` (or `mattn/go-sqlite3`)
   - Implemented as a `Driver` switch in `internal/db` (no mutable registry); Connect wired for all three, blank-imported drivers.
 - [x] Add `github.com/atotto/clipboard`. (Used directly by `internal/export.SystemClipboard`.)
-- [ ] Add `github.com/sahilm/fuzzy` (or `github.com/lithammer/fuzzysearch/fuzzy`) for autocomplete ranking (§10).
+- [x] Add `github.com/sahilm/fuzzy` (or `github.com/lithammer/fuzzysearch/fuzzy`) for autocomplete ranking (§10). (Used by the schema browser filter; §10.3 reuses it for suggestions.)
 - [x] Create `Makefile` with `build`, `run`, `test`, `test-race`, `lint`.
 
 ---
@@ -198,10 +198,10 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 - [x] Handle partial failure (permission denied on some catalogs) — keep what loaded, surface a subtle warning. (Status shows `schema: N objects (partial)` or `schema: unavailable`.)
 
 ### 10.2 Schema browser pane/overlay
-- [ ] `ctrl+b` toggles a schema browser overlay (or a resizable left pane).
-- [ ] Tree: `schema → table/view → columns (with type + PK marker)`; expand/collapse with `→`/`←`, `enter` to insert the selected identifier at the cursor in the editor.
-- [ ] Fuzzy filter (`/`) over table and column names.
-- [ ] Show FK hints inline (e.g., `user_id → users.id`) if `LoadSchema` captured them.
+- [x] `ctrl+b` toggles a schema browser overlay (or a resizable left pane).
+- [x] Tree: `schema → table/view → columns (with type + PK marker)`; expand/collapse with `→`/`←`, `enter` to insert the selected identifier at the cursor in the editor.
+- [x] Fuzzy filter (`/`) over table and column names.
+- [x] Show FK hints inline (e.g., `user_id → users.id`) if `LoadSchema` captured them.
 
 ### 10.3 Autocomplete popup
 - [ ] `internal/query/autocomplete` model: a popup rendered just below the cursor line inside the query pane (use `textarea`'s `Line()`/`Column()` or maintain an independent cursor mirror — decide and document).

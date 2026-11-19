@@ -65,6 +65,7 @@ type Model struct {
 	width, height int
 	modal         *modalBox
 	export        *exportDialog
+	browser       *schemaBrowser
 	notice        string
 	noticeSeq     int
 
@@ -152,6 +153,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.schema.Store(msg.ConnectionID, msg.Tables, msg.Err)
 		if m.active != nil && m.active.ID == msg.ConnectionID {
 			m.schemaLoad = false
+			if m.browser != nil {
+				m.browser.SetTables(msg.Tables)
+			}
 		}
 		return m, nil
 	case query.ExecuteRequestedMsg:
@@ -322,6 +326,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.favorites, cmd = m.favorites.Update(msg)
 		return m, cmd
 	}
+	if m.browser != nil {
+		return m.handleBrowserKey(msg)
+	}
 	if m.workspace.CapturesInput() {
 		var cmd tea.Cmd
 		m.workspace, cmd = m.workspace.Update(msg)
@@ -359,6 +366,25 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.BrowseFav) && m.focus == FocusQuery:
 		m.favorites.OpenBrowse()
 		return m, nil
+	case key.Matches(msg, m.keys.BrowseSchema):
+		if m.active == nil {
+			cmd := m.setNotice("select a connection first")
+			return m, cmd
+		}
+		if m.schemaLoad {
+			cmd := m.setNotice("schema still loading")
+			return m, cmd
+		}
+		entry, ok := m.schema.Get(m.active.ID)
+		if !ok {
+			cmd := m.setNotice("schema not loaded")
+			return m, cmd
+		}
+		browser := newSchemaBrowser()
+		browser.SetSize(m.layout().width, m.layout().height)
+		browser.Open(entry.Tables)
+		m.browser = browser
+		return m, nil
 	case key.Matches(msg, m.keys.Export) && m.focus == FocusResult:
 		if _, ok := m.results.Result(); !ok {
 			cmd := m.setNotice("no results to export")
@@ -392,6 +418,25 @@ func (m *Model) syncFocus() {
 		return
 	}
 	m.results.Blur()
+}
+
+func (m Model) handleBrowserKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	action := m.browser.Update(msg)
+	switch {
+	case action.insert != "":
+		m.query.InsertText(action.insert)
+		m.focus = FocusQuery
+		m.syncFocus()
+		m.browser = nil
+	case action.close:
+		m.browser = nil
+	case action.refresh:
+		if m.active != nil {
+			cmd := m.refreshSchema(*m.active)
+			return m, cmd
+		}
+	}
+	return m, nil
 }
 
 // routeSessionEvent dispatches an async query event to its owning session.
@@ -459,6 +504,8 @@ func (m Model) View() string {
 		view = m.renderModal(view, lay, modalBox{Title: "Export results", Body: m.export.view()})
 	} else if title, body, ok := m.favorites.Modal(); ok {
 		view = m.renderModal(view, lay, modalBox{Title: title, Body: body})
+	} else if m.browser != nil {
+		view = m.renderModal(view, lay, modalBox{Title: m.browser.Title(), Body: m.browser.View()})
 	} else if m.modal != nil {
 		view = m.renderModal(view, lay, *m.modal)
 	}
@@ -501,6 +548,9 @@ func (m *Model) resize() {
 	m.query.SetSize(max(lay.rightW-4, 1), max(lay.queryH-3, 1))
 	m.results.SetSize(max(lay.rightW-4, 1), max(lay.resultH-3, 1))
 	m.favorites.SetSize(lay.width, lay.height)
+	if m.browser != nil {
+		m.browser.SetSize(lay.width, lay.height)
+	}
 	if m.active != nil {
 		m.workspace.SetActive(m.active.ID)
 	}

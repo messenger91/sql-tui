@@ -2,7 +2,7 @@
 
 ## Current state
 
-Completed: §0–§9 — bootstrap, `internal/db` (SQLite, MySQL, and Postgres: connect, execute, schema), root TUI shell, workspace pane, query editor, table/CSV/JSON result views, view toggle, and export to file or clipboard. **M3, M4, and M5 are complete; §10.1 (schema cache) is complete.** Next: §10.2 schema browser. `TODO.md` is authoritative for what is implemented.
+Completed: §0–§9 — bootstrap, `internal/db` (SQLite, MySQL, and Postgres: connect, execute, schema), root TUI shell, workspace pane, query editor, table/CSV/JSON result views, view toggle, and export to file or clipboard. **M3, M4, and M5 are complete; §10.1–§10.2 are complete.** Next: §10.3 autocomplete popup. `TODO.md` is authoritative for what is implemented.
 
 ## Source of truth
 
@@ -48,6 +48,14 @@ These are easy to violate when writing the first implementation:
 - Activation is message-based: workspace emits `ActivatedMsg`; the root model focuses the query pane, calls `workspace.ActivationSucceeded` (which also clears the `connecting…` spinner), and starts an async `db.LoadSchema`. Editing the active connection re-emits `ActivatedMsg` so the schema is reloaded. If a new activation message is ever added, clear `busy` there too or the spinner runs forever.
 - DSNs are masked in the list (`maskDSN`), but the form and the on-disk JSON keep them plaintext.
 - `main` must call `model.Close()` after `tea.NewProgram(...).Run()`; the manager is a pointer inside a copied model, so closing there releases all handles.
+
+## Schema browser gotchas
+
+- `ctrl+b` needs an active connection **and** a completed schema load; otherwise it emits a notice (`select a connection first`, `schema still loading`, `schema not loaded`).
+- The browser reads a cache snapshot on open and is updated by `schemaLoadedMsg` while open, so `ctrl+r` inside it refreshes in place (the root model's `handleBrowserKey` calls `refreshSchema`).
+- Fuzzy filtering switches the tree to a flat, score-ordered list of matching tables/columns; columns show their owning table in parentheses.
+- `enter` inserts a **bare identifier** (column name without table/alias prefix), then closes the overlay and focuses the query pane.
+- The modal is rendered after workspace/export/favorites modals and before the generic app modal; keys are routed to it only while it exists.
 
 ## Schema cache gotchas
 

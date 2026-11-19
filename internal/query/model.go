@@ -73,6 +73,12 @@ func (m *Model) SetSQL(sql string) {
 	m.editor.Focus()
 }
 
+// InsertText inserts text at the editor cursor.
+func (m *Model) InsertText(text string) {
+	m.editor.InsertString(text)
+	m.editor.Focus()
+}
+
 // SetSize resizes the editor, reserving one row for the status line.
 func (m *Model) SetSize(width, height int) {
 	m.width = max(width, 10)
