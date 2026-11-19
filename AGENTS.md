@@ -2,7 +2,7 @@
 
 ## Current state
 
-Completed: §0–§5 — bootstrap, `internal/db` (full SQLite; MySQL/Postgres connect only), root TUI shell, workspace pane, and the query editor with execution. M2 is one step from done: the results pane only shows a summary line until §6.1 renders the table. MySQL/Postgres schema introspection returns `ErrUnsupportedSchema` until M5. `TODO.md` is authoritative for what is implemented.
+Completed: §0–§6.1 — bootstrap, `internal/db` (full SQLite; MySQL/Postgres connect only), root TUI shell, workspace pane, query editor, and the results table. **M2 is complete** (add SQLite connection → run SQL → see rows). CSV/JSON views and export are next (§6.2/§6.3, §8, §9). MySQL/Postgres schema introspection returns `ErrUnsupportedSchema` until M5. `TODO.md` is authoritative for what is implemented.
 
 ## Source of truth
 
@@ -48,6 +48,15 @@ These are easy to violate when writing the first implementation:
 - Activation is message-based: workspace emits `ActivatedMsg`; the root model focuses the query pane, calls `workspace.SetActive`, and starts an async `db.LoadSchema`. Editing the active connection re-emits `ActivatedMsg` so the schema is reloaded.
 - DSNs are masked in the list (`maskDSN`), but the form and the on-disk JSON keep them plaintext.
 - `main` must call `model.Close()` after `tea.NewProgram(...).Run()`; the manager is a pointer inside a copied model, so closing there releases all handles.
+
+## Result gotchas
+
+- `result.Model` owns the raw `db.QueryResult` for export (§8) and the rendered table. Read it through `Result()`; do not duplicate result state in the root model.
+- Values are stringified once by `FormatValue`: `NULL`, RFC3339 time, `0x…` for binary blobs, printable `[]byte` as text, and newlines/tabs escaped so rows stay one line.
+- Column widths are natural but capped (3–40) and shrunk to fit the pane; cells are ellipsized by `bubbles/table`. There is no horizontal scrolling, by design.
+- `SetResult` must rebuild the table **before** `SetCursor(0)`: the table clamps the cursor against the current row count, so setting it first leaves the cursor at -1.
+- `bubbles/table` applies styles per row, not per cell. Proper NULL dimming would require ANSI inside cell values (which breaks width math) — deferred to §13.
+- `AppendRows` keeps the cursor and updates `RowCount`; use it for §11 streaming instead of calling `SetResult` per batch.
 
 ## Query gotchas
 

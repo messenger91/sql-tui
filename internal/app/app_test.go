@@ -273,13 +273,14 @@ func TestQueryExecutionReturnsRows(t *testing.T) {
 	if m.focus != FocusResult {
 		t.Fatalf("focus = %v, want results", m.focus)
 	}
-	if m.lastResult == nil || len(m.lastResult.Rows) != 1 {
-		t.Fatalf("result = %+v", m.lastResult)
+	res, ok := m.results.Result()
+	if !ok || len(res.Rows) != 1 {
+		t.Fatalf("result = %+v", res)
 	}
-	if len(m.lastResult.Columns) != 1 || m.lastResult.Columns[0] != "n" {
-		t.Fatalf("columns = %v", m.lastResult.Columns)
+	if len(res.Columns) != 1 || res.Columns[0] != "n" {
+		t.Fatalf("columns = %v", res.Columns)
 	}
-	if got := m.lastResult.Rows[0][0]; got != int64(1) {
+	if got := res.Rows[0][0]; got != int64(1) {
 		t.Fatalf("value = %#v", got)
 	}
 }
@@ -300,10 +301,11 @@ func TestQueryExecutionRunsAllStatements(t *testing.T) {
 	if m.lastQueryErr != nil {
 		t.Fatalf("query error: %v", m.lastQueryErr)
 	}
-	if m.lastResult == nil || len(m.lastResult.Rows) != 1 {
-		t.Fatalf("result = %+v", m.lastResult)
+	res, ok := m.results.Result()
+	if !ok || len(res.Rows) != 1 {
+		t.Fatalf("result = %+v", res)
 	}
-	if got := m.lastResult.Rows[0][0]; got != int64(7) {
+	if got := res.Rows[0][0]; got != int64(7) {
 		t.Fatalf("value = %#v", got)
 	}
 }
@@ -340,5 +342,30 @@ func TestQueryWithoutConnectionIsRejected(t *testing.T) {
 	}
 	if !strings.Contains(m.query.View(), "no connection selected") {
 		t.Fatalf("query pane = %q", m.query.View())
+	}
+}
+
+func TestResultTableRendersInPane(t *testing.T) {
+	m := openActive(t, newSized(t, 80, 24))
+
+	updated, cmd := m.Update(query.ExecuteRequestedMsg{SQL: "SELECT 42 AS answer"})
+	m = updated.(Model)
+	finished, ok := cmd().(queryFinishedMsg)
+	if !ok {
+		t.Fatal("expected queryFinishedMsg")
+	}
+	updated, _ = m.Update(finished)
+	m = updated.(Model)
+
+	view := ansi.Strip(m.View())
+	for _, want := range []string{"answer", "42", "table"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view missing %q:\n%s", want, view)
+		}
+	}
+	for i, line := range strings.Split(view, "\n") {
+		if width := ansi.StringWidth(line); width > 80 {
+			t.Fatalf("line %d width %d > 80: %q", i, width, line)
+		}
 	}
 }

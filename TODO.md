@@ -109,7 +109,7 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
   - Placeholder: `SELECT * FROM …`.
 - [x] Bind **execute** to `ctrl+r` (or `F5`): build a `tea.Cmd` that calls `db.Execute`; emit `queryStartedMsg`, then `queryFinishedMsg(QueryResult)`. *(Superseded by §11 async runner; keep the simple path working first.)* (Editor emits `ExecuteRequestedMsg`; the root model owns execution and replies with `queryFinishedMsg`/`queryFailedMsg`.)
 - [x] During execution: show a spinner + "Running…" status in the query pane footer; disable execute key until done.
-- [ ] On result: set result view state, move focus to Result window, populate table. (Focus + result storage done; table rendering is §6.1.)
+- [x] On result: set result view state, move focus to Result window, populate table. (Focus + result storage done; table rendering is §6.1.)
 - [x] **Editor quality-of-life** (incremental):
   - [ ] Basic SQL keyword highlighting via `textarea` styling (regex-based, optional).
   - [ ] `ctrl+s` opens "Save as favorite" dialog (see §7).
@@ -122,13 +122,13 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 ## 6. Response window (results)
 
 ### 6.1 Table view
-- [ ] Use `bubbles/table` for structured results:
+- [x] Use `bubbles/table` for structured results:
   - Columns from `QueryResult.Columns`; rows from `QueryResult.Rows` formatted to strings (handle `NULL` as `NULL`, `time.Time`, `[]byte` → hex/string).
   - Support vertical scrolling and cursor row navigation.
-- [ ] Render a status line: `N rows · 123ms · table view`.
-- [ ] **Width handling**: compute column widths from content but cap total width; horizontal scroll via `viewport` if the table exceeds pane width (or use table's built-in horizontal scroll if available).
-- [ ] **NULL / type styling**: style `NULL` dim; style numeric/boolean distinctly (optional Lip Gloss).
-- [ ] **Streaming append hook** (§11): table must support appending rows incrementally from `rowsAppendedMsg` without full re-render flicker.
+- [x] Render a status line: `N rows · 123ms · table view`.
+- [x] **Width handling**: compute column widths from content but cap total width; horizontal scroll via `viewport` if the table exceeds pane width (or use table's built-in horizontal scroll if available). (Widths are shrunk proportionally to fit; no horizontal scrolling needed.)
+- [ ] **NULL / type styling**: style `NULL` dim; style numeric/boolean distinctly (optional Lip Gloss). (Values render correctly, but `bubbles/table` cannot style individual cells without injecting ANSI into values; left for §13 polish.)
+- [x] **Streaming append hook** (§11): table must support appending rows incrementally from `rowsAppendedMsg` without full re-render flicker. (`result.Model.AppendRows` appends raw + formatted rows and preserves the cursor.)
 
 ### 6.2 CSV view
 - [ ] Render `QueryResult` as CSV text inside a `viewport`.

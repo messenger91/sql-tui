@@ -18,6 +18,7 @@ import (
 
 	"github.com/messenger91/sql-tui/internal/db"
 	"github.com/messenger91/sql-tui/internal/query"
+	"github.com/messenger91/sql-tui/internal/result"
 	"github.com/messenger91/sql-tui/internal/styles"
 	"github.com/messenger91/sql-tui/internal/workspace"
 )
@@ -50,6 +51,7 @@ type Model struct {
 	manager   *db.Manager
 	workspace workspace.Model
 	query     query.Model
+	results   result.Model
 
 	focus         Focus
 	width, height int
@@ -58,7 +60,6 @@ type Model struct {
 	active       *db.Connection
 	schema       []db.TableMeta
 	schemaErr    error
-	lastResult   *db.QueryResult
 	lastQueryErr error
 }
 
@@ -80,6 +81,7 @@ func NewWithConfig(cfg Config) Model {
 		manager:   manager,
 		workspace: workspace.New(store, manager),
 		query:     query.New(),
+		results:   result.New(),
 		focus:     FocusWorkspace,
 	}
 }
@@ -117,6 +119,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.active = &connection
 		m.focus = FocusQuery
 		m.workspace.SetActive(connection.ID)
+		m.syncFocus()
 		return m, m.loadSchema(connection)
 	case workspace.DeactivatedMsg:
 		m.active = nil
@@ -134,10 +137,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.startQuery(msg.SQL)
 	case queryFinishedMsg:
 		m.query.ReportSuccess(msg.Statements, msg.Result)
-		result := msg.Result
-		m.lastResult = &result
+		m.results.SetResult(msg.Result)
 		m.lastQueryErr = nil
 		m.focus = FocusResult
+		m.syncFocus()
 		return m, nil
 	case queryFailedMsg:
 		m.query.ReportError(msg.Err)
@@ -216,9 +219,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Cycle):
 		m.focus = m.focus.Next()
+		m.syncFocus()
 		return m, nil
 	case key.Matches(msg, m.keys.CyclePrev):
 		m.focus = m.focus.Prev()
+		m.syncFocus()
 		return m, nil
 	case key.Matches(msg, m.keys.Help):
 		m.help.ShowAll = !m.help.ShowAll
@@ -235,7 +240,21 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.query, cmd = m.query.Update(msg)
 		return m, cmd
 	}
+	if m.focus == FocusResult {
+		var cmd tea.Cmd
+		m.results, cmd = m.results.Update(msg)
+		return m, cmd
+	}
 	return m, nil
+}
+
+// syncFocus mirrors the pane focus onto child widgets that track it.
+func (m *Model) syncFocus() {
+	if m.focus == FocusResult {
+		m.results.Focus()
+		return
+	}
+	m.results.Blur()
 }
 
 // routeSessionEvent dispatches an async query event to its owning session.
@@ -316,6 +335,7 @@ func (m *Model) resize() {
 	lay := m.layout()
 	m.workspace.SetSize(max(lay.workspaceW-4, 1), max(lay.bodyH-3, 1))
 	m.query.SetSize(max(lay.rightW-4, 1), max(lay.queryH-3, 1))
+	m.results.SetSize(max(lay.rightW-4, 1), max(lay.resultH-3, 1))
 	if m.active != nil {
 		m.workspace.SetActive(m.active.ID)
 	}
@@ -328,18 +348,7 @@ func (m Model) resultsView(width int) string {
 	if m.lastQueryErr != nil {
 		return "error: " + truncate(m.lastQueryErr.Error(), width)
 	}
-	if m.lastResult == nil {
-		return "no results yet"
-	}
-	result := m.lastResult
-	header := fmt.Sprintf("%s · %s", pluralize(result.RowCount, "row"), query.FormatElapsed(result.Elapsed))
-	if result.Truncated {
-		header += " · truncated"
-	}
-	if len(result.Columns) > 0 {
-		header += " · " + strings.Join(result.Columns, ", ")
-	}
-	return truncate(header, width)
+	return m.results.View()
 }
 
 func truncate(text string, width int) string {
@@ -347,13 +356,6 @@ func truncate(text string, width int) string {
 		return text
 	}
 	return ansi.Truncate(text, width, "…")
-}
-
-func pluralize(count int, singular string) string {
-	if count == 1 {
-		return "1 " + singular
-	}
-	return fmt.Sprintf("%d %ss", count, singular)
 }
 
 type layout struct {
