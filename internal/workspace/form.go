@@ -21,6 +21,15 @@ const (
 // driverOrder is the cycle order for the driver selector.
 var driverOrder = []db.Driver{db.DriverSQLite, db.DriverMySQL, db.DriverPostgres}
 
+// Focus styling: the label and value of the active field are accent-coloured
+// and prefixed with an arrow so tab navigation is visible at a glance.
+var (
+	formLabelStyle = lipgloss.NewStyle().Bold(true)
+	formFocusStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("62"))
+	formValueStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("62"))
+	formHintStyle  = lipgloss.NewStyle().Faint(true)
+)
+
 type form struct {
 	mode     formMode
 	id       string
@@ -85,13 +94,27 @@ func (f *form) setWidth(width int) {
 func (f *form) syncFocus() {
 	f.name.Blur()
 	f.dsn.Blur()
+	f.schema.Blur()
+	inputs := []*textinput.Model{&f.name, &f.dsn, &f.schema}
+	for _, input := range inputs {
+		input.TextStyle = lipgloss.NewStyle()
+		input.Cursor.Style = lipgloss.NewStyle()
+	}
+	focused := -1
 	switch f.focus {
 	case 0:
 		f.name.Focus()
+		focused = 0
 	case 2:
 		f.dsn.Focus()
+		focused = 1
 	case 3:
 		f.schema.Focus()
+		focused = 2
+	}
+	if focused >= 0 {
+		inputs[focused].TextStyle = formValueStyle
+		inputs[focused].Cursor.Style = formValueStyle
 	}
 }
 
@@ -104,7 +127,7 @@ func driverHint(driver db.Driver) (string, string) {
 	case db.DriverMySQL:
 		return "user:pass@tcp(127.0.0.1:3306)/dbname", "MySQL DSN, e.g. user:pass@tcp(host:3306)/db"
 	case db.DriverPostgres:
-		return "postgres://user:pass@localhost:5432/dbname?sslmode=disable", "Postgres URL, e.g. postgres://user@host:5432/db"
+		return "postgres://user:pass@localhost:5432/dbname", "Postgres URL, e.g. postgres://user@host:5432/db (sslmode defaults to prefer)"
 	default:
 		return ":memory:", "SQLite file path, or :memory: for an in-memory database"
 	}
@@ -221,46 +244,59 @@ func (f *form) view(width int) string {
 	f.dsn.Width = inputWidth
 	f.schema.Width = inputWidth
 
-	label := lipgloss.NewStyle().Bold(true)
 	var b strings.Builder
-	b.WriteString(label.Render("Name"))
+	b.WriteString(f.label(0, "Name"))
 	b.WriteString("\n")
 	b.WriteString(f.name.View())
 	b.WriteString("\n\n")
-	b.WriteString(label.Render("Driver"))
-	b.WriteString("\n◀ ")
-	b.WriteString(string(f.driver))
-	b.WriteString(" ▶")
+	b.WriteString(f.label(1, "Driver"))
+	b.WriteString("\n")
+	b.WriteString(f.value(1, "◀ "+string(f.driver)+" ▶"))
 	b.WriteString("\n\n")
-	b.WriteString(label.Render("DSN"))
+	b.WriteString(f.label(2, "DSN"))
 	b.WriteString("\n")
 	b.WriteString(f.dsn.View())
 	b.WriteString("\n\n")
-	b.WriteString(label.Render("Schema"))
+	b.WriteString(f.label(3, "Schema"))
 	b.WriteString("\n")
 	b.WriteString(f.schema.View())
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().Faint(true).Render("optional: Postgres search_path / MySQL database"))
+	b.WriteString(formHintStyle.Render("optional: Postgres search_path / MySQL database"))
 	b.WriteString("\n\n")
-	b.WriteString(label.Render("Access"))
-	b.WriteString("\n◀ ")
-	if f.readOnly {
-		b.WriteString("read-only")
-	} else {
-		b.WriteString("writable")
+	b.WriteString(f.label(4, "Access"))
+	b.WriteString("\n")
+	access := "read-only"
+	if !f.readOnly {
+		access = "writable"
 	}
-	b.WriteString(" ▶")
+	b.WriteString(f.value(4, "◀ "+access+" ▶"))
 
 	placeholder, hint := driverHint(f.driver)
 	_ = placeholder
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().Faint(true).Render(hint))
+	b.WriteString(formHintStyle.Render(hint))
 
 	if f.err != "" {
 		b.WriteString("\n\n")
 		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render(f.err))
 	}
 	b.WriteString("\n\n")
-	b.WriteString(lipgloss.NewStyle().Faint(true).Render("tab next field · ←/→ change · enter connect · esc cancel"))
+	b.WriteString(formHintStyle.Render("tab next field · ←/→ change · enter connect · esc cancel"))
 	return b.String()
+}
+
+// label renders a field label, accenting the field that owns focus.
+func (f *form) label(index int, text string) string {
+	if f.focus == index {
+		return formFocusStyle.Render("▸ " + text)
+	}
+	return formLabelStyle.Render("  " + text)
+}
+
+// value renders a selector value, accenting it while its field owns focus.
+func (f *form) value(index int, text string) string {
+	if f.focus == index {
+		return formValueStyle.Render(text)
+	}
+	return text
 }

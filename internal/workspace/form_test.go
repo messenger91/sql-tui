@@ -1,9 +1,12 @@
 package workspace
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/messenger91/sql-tui/internal/db"
 )
@@ -131,5 +134,57 @@ func TestFormEditPreservesIdentity(t *testing.T) {
 	}
 	if updated.Driver != db.DriverMySQL {
 		t.Fatalf("driver = %s", updated.Driver)
+	}
+}
+
+func hasAccent(style lipgloss.Style) bool {
+	_, plain := style.GetForeground().(lipgloss.NoColor)
+	return !plain
+}
+
+func TestFormFocusHighlight(t *testing.T) {
+	form := newForm(formAdd)
+	view := ansi.Strip(form.view(60))
+	if !strings.Contains(view, "▸ Name") {
+		t.Fatalf("focused label missing:\n%s", view)
+	}
+	if strings.Contains(view, "▸ Driver") || strings.Contains(view, "▸ DSN") {
+		t.Fatalf("more than one field is highlighted:\n%s", view)
+	}
+	if !hasAccent(form.name.TextStyle) {
+		t.Fatal("focused input has no accent text style")
+	}
+	if hasAccent(form.dsn.TextStyle) || hasAccent(form.schema.TextStyle) {
+		t.Fatal("blurred inputs keep the accent style")
+	}
+
+	form.update(tea.KeyMsg{Type: tea.KeyTab}) // driver
+	view = ansi.Strip(form.view(60))
+	if !strings.Contains(view, "▸ Driver") || strings.Contains(view, "▸ Name") {
+		t.Fatalf("driver focus highlight missing:\n%s", view)
+	}
+	if hasAccent(form.name.TextStyle) {
+		t.Fatal("name still styled after blur")
+	}
+
+	form.update(tea.KeyMsg{Type: tea.KeyTab}) // dsn
+	view = ansi.Strip(form.view(60))
+	if !strings.Contains(view, "▸ DSN") || !strings.Contains(view, "  Name") {
+		t.Fatalf("DSN focus highlight missing:\n%s", view)
+	}
+	if !hasAccent(form.dsn.TextStyle) {
+		t.Fatal("DSN input lost the accent style")
+	}
+
+	form.update(tea.KeyMsg{Type: tea.KeyTab}) // schema
+	view = ansi.Strip(form.view(60))
+	if !strings.Contains(view, "▸ Schema") {
+		t.Fatalf("schema focus highlight missing:\n%s", view)
+	}
+
+	form.update(tea.KeyMsg{Type: tea.KeyTab}) // access
+	view = ansi.Strip(form.view(60))
+	if !strings.Contains(view, "▸ Access") || !strings.Contains(view, "◀ read-only ▶") {
+		t.Fatalf("access focus highlight missing:\n%s", view)
 	}
 }

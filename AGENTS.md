@@ -49,6 +49,7 @@ These are easy to violate when writing the first implementation:
 - The workspace owns its own dialogs (add/edit form, delete confirm, connect error). It exposes them via `Modal()` and reports `CapturesInput()`, which the root model checks **before** global `tab`/help handling. Add new modal keys there, not in `app`.
 - Activation is message-based: workspace emits `ActivatedMsg`; the root model focuses the query pane, calls `workspace.ActivationSucceeded` (which also clears the `connecting…` spinner), and starts an async `db.LoadSchema`. Editing the active connection re-emits `ActivatedMsg` so the schema is reloaded. If a new activation message is ever added, clear `busy` there too or the spinner runs forever.
 - DSNs are masked in the list (`maskDSN`), but the form and the on-disk JSON keep them plaintext.
+- The connection form highlights the focused field (`form.label`/`form.value`: accent color + `▸` marker; `syncFocus` sets the active textinput's `TextStyle`/`Cursor.Style`). Keep new fields wired into `syncFocus` and the `label`/`value` indexes or tab navigation becomes invisible again.
 - `main` must call `model.Close()` after `tea.NewProgram(...).Run()`; the manager is a pointer inside a copied model, so closing there releases all handles.
 
 ## Sorting gotchas
@@ -83,7 +84,7 @@ These are easy to violate when writing the first implementation:
 
 ## Stretch-feature gotchas
 
-- `db.ParseDSN` normalizes URL-style DSNs before `sql.Open`; `Connection.DSN` stays as entered for display, so `maskDSN` still sees URLs.
+- `db.ParseDSN` normalizes URL-style DSNs before `sql.Open`; `Connection.DSN` stays as entered for display, so `maskDSN` still sees URLs. Postgres URLs without `sslmode` get `sslmode=prefer` (psql behavior: SSL when available, plaintext fallback); an explicit `sslmode` is never overridden.
 - `Connection.Options["schema"]` is applied after ping (`SET search_path` / `USE`); SQLite rejects it. The connection form exposes it as the optional `Schema` field.
 - `history.json` is loaded asynchronously on `Init` and seeded into every session editor; `recordHistory` only runs when a query actually starts. New tabs are seeded explicitly in `focusSessionForConnection`/`newTab`/`closeSession`.
 - `x` explains the first statement via `db.Explain`; SQLite trees are built from `id/parent/detail`, everything else renders text rows. Plans open in the generic modal and are height-clipped.

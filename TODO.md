@@ -94,6 +94,7 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 - [x] **Add connection** flow:
   - `a` opens a form overlay with `textinput` fields: name, driver (select), DSN.
   - Provide driver-specific DSN hints/placeholders.
+  - Highlight the focused field: accent-colored label/value plus a `▸` marker, and accent text/cursor in the active input.
   - `enter` validates and calls `db.Connect` via `tea.Cmd`; spinner while connecting.
   - On success, append to list and persist; on failure, show error dialog.
 - [x] **Edit / delete** connection: `e` / `d` on selected item; confirm delete.
@@ -375,7 +376,7 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 
 
 
-- [x] Connection via URL (`mysql://user:pass@host/db`) parser. (`db.ParseDSN`: MySQL URL → native DSN; `postgresql://` normalization; `sqlite://`/`sqlite:` paths. Native DSNs unchanged.)
+- [x] Connection via URL (`mysql://user:pass@host/db`) parser. (`db.ParseDSN`: MySQL URL → native DSN; `postgresql://` normalization; `sqlite://`/`sqlite:` paths; Postgres URLs get `sslmode=prefer` when unspecified, matching psql and fixing local servers without SSL. Native DSNs unchanged.)
 - [x] Persistent query history (shared with per-tab recall in §5). (`internal/history`; `history.json` capped at 200; loaded at startup and seeded into every tab.)
 - [x] EXPLAIN / query-plan visualizer (per-driver plan parsing + tree render). (`x`; SQLite plan rows become an indented tree; Postgres/MySQL text plans render line by line.)
 - [ ] Keyring-backed credential storage. (Requires a new dependency such as `zalando/go-keyring`; awaiting approval. DSNs remain plaintext at 0600.)

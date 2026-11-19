@@ -40,9 +40,34 @@ func TestParseDSN(t *testing.T) {
 			want: "postgres://u:p@host:5432/db?sslmode=disable",
 		},
 		{
+			name: "postgres url defaults to sslmode prefer", driver: DriverPostgres,
+			dsn:  "postgres://postgres:example@localhost:5432/wallet_test",
+			want: "postgres://postgres:example@localhost:5432/wallet_test?sslmode=prefer",
+		},
+		{
 			name: "postgresql url", driver: DriverPostgres,
 			dsn:  "postgresql://u:p@host/db",
-			want: "postgres://u:p@host/db",
+			want: "postgres://u:p@host/db?sslmode=prefer",
+		},
+		{
+			name: "postgres url explicit sslmode preserved", driver: DriverPostgres,
+			dsn:  "postgres://u@host/db?sslmode=verify-full",
+			want: "postgres://u@host/db?sslmode=verify-full",
+		},
+		{
+			name: "postgres url keeps other parameters", driver: DriverPostgres,
+			dsn:  "postgres://u@host/db?connect_timeout=5",
+			want: "postgres://u@host/db?connect_timeout=5&sslmode=prefer",
+		},
+		{
+			name: "postgres url unix socket style", driver: DriverPostgres,
+			dsn:  "postgres:///db?host=/var/run/postgresql",
+			want: "postgres:///db?host=%2Fvar%2Frun%2Fpostgresql&sslmode=prefer",
+		},
+		{
+			name: "postgres url invalid", driver: DriverPostgres,
+			dsn:     "postgres://%zz",
+			wantErr: true,
 		},
 		{
 			name: "sqlite path", driver: DriverSQLite,

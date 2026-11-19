@@ -24,7 +24,10 @@ func ParseDSN(driver Driver, dsn string) (string, error) {
 		}
 	case DriverPostgres:
 		if strings.HasPrefix(trimmed, "postgresql://") {
-			return "postgres://" + strings.TrimPrefix(trimmed, "postgresql://"), nil
+			trimmed = "postgres://" + strings.TrimPrefix(trimmed, "postgresql://")
+		}
+		if strings.HasPrefix(trimmed, "postgres://") {
+			return parsePostgresURL(trimmed)
 		}
 	case DriverSQLite:
 		if strings.HasPrefix(trimmed, "sqlite://") {
@@ -35,6 +38,23 @@ func ParseDSN(driver Driver, dsn string) (string, error) {
 		}
 	}
 	return dsn, nil
+}
+
+// parsePostgresURL adds the libpq default psql uses. lib/pq requires SSL when
+// no sslmode is given, which breaks local servers that have SSL disabled;
+// "prefer" still negotiates SSL when the server supports it and falls back to
+// plaintext otherwise.
+func parsePostgresURL(dsn string) (string, error) {
+	parsed, err := url.Parse(dsn)
+	if err != nil {
+		return "", fmt.Errorf("db: parse postgres url: %w", err)
+	}
+	query := parsed.Query()
+	if !query.Has("sslmode") {
+		query.Set("sslmode", "prefer")
+		parsed.RawQuery = query.Encode()
+	}
+	return parsed.String(), nil
 }
 
 func parseMySQLURL(dsn string) (string, error) {

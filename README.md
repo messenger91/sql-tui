@@ -21,10 +21,13 @@ apply.
 
 - **Connections** for SQLite/MySQL/Postgres, persisted to `connections.json`
   (0600, atomic writes). URL-style DSNs (`mysql://…`, `postgres://…`,
-  `sqlite://…`) and native DSNs are both accepted. Connections are read-only
+  `sqlite://…`) and native DSNs are both accepted; Postgres URLs default to
+  `sslmode=prefer`, so local servers without SSL work while SSL is used when
+  available. Connections are read-only
   by default; flip the `Access` field to `writable` in the add/edit form to
-  enable inline editing. An optional `Schema` field sets Postgres
-  `search_path` or the MySQL database.
+  enable inline editing; the focused field in the add/edit form is highlighted
+  in the accent color. An optional `Schema` field sets Postgres `search_path`
+  or the MySQL database.
 - **Query editor** with session history (`ctrl+↑/↓`) persisted across restarts
   to `history.json`, SQL syntax highlighting, multi-statement splitting
   (string/comment/dollar-quote aware), and a 50 ms-debounced, schema-aware
@@ -78,7 +81,7 @@ make build   # -> bin/sql-tui
 |---|---|
 | SQLite  | `:memory:`, `/path/to/file.db`, or `sqlite://…` |
 | MySQL   | `user:pass@tcp(127.0.0.1:3306)/dbname` or `mysql://user:pass@host/db` |
-| Postgres| `postgres://user:pass@localhost:5432/dbname?sslmode=disable` |
+| Postgres| `postgres://user:pass@localhost:5432/dbname` (add `?sslmode=disable` to force plaintext) |
 
 DSNs are stored in plaintext locally; passwords are masked in the list UI.
 
