@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -28,11 +29,12 @@ import (
 )
 
 const (
-	defaultWidth   = 80
-	defaultHeight  = 24
-	workspaceWidth = 30
-	minBodyHeight  = 3
-	schemaTimeout  = 10 * time.Second
+	defaultWidth    = 80
+	defaultHeight   = 24
+	workspaceWidth  = 30
+	minBodyHeight   = 3
+	schemaTimeout   = 10 * time.Second
+	fetchTableLimit = 100
 
 	// Below this width the workspace pane is hidden entirely.
 	collapseWidth = 25
@@ -51,6 +53,9 @@ type Config struct {
 	HistoryPath     string
 	Clipboard       export.Clipboard
 }
+
+// Version is the application version shown in the status bar and --version.
+const Version = "0.1.0"
 
 // Model is the root application model.
 type Model struct {
@@ -75,6 +80,8 @@ type Model struct {
 	cellEdit      *cellEditor
 	rowMenu       *rowMenu
 	preview       *previewState
+	helpOpen      bool
+	menu          *commandMenuState
 	needsRefresh  bool
 	notice        string
 	noticeSeq     int
@@ -191,6 +198,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.schemaLoad = false
 		return m, nil
 	case schemaLoadedMsg:
+		if os.Getenv("SQL_TUI_DEBUG") != "" {
+			fmt.Fprintln(os.Stderr, "schemaLoaded for", msg.ConnectionID, "err:", msg.Err)
+		}
 		m.schema.Store(msg.ConnectionID, msg.Tables, msg.Err)
 		entry, ok := m.schema.Get(msg.ConnectionID)
 		for _, s := range m.sessions.Sessions() {
@@ -202,6 +212,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+		m.workspace.SetTables(schemaTableNames(msg.Tables))
 		if m.active != nil && m.active.ID == msg.ConnectionID {
 			m.schemaLoad = false
 			if m.browser != nil {
@@ -219,13 +230,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case query.ExecuteRequestedMsg:
-		m.clearNotice()
-		updated, cmd := m.startQuery(msg.SQL)
-		model := updated.(Model)
-		if s := model.activeSession(); s != nil && s.Running() {
-			return model, tea.Batch(cmd, model.recordHistory(msg.SQL))
-		}
-		return model, cmd
+		return m.executeSQL(msg.SQL)
+	case workspace.FetchTableMsg:
+		return m.executeSQL(m.fetchTableSQL(msg.Table))
 	case favorites.LoadMsg:
 		if s := m.activeSession(); s != nil {
 			s.SetSQL(msg.SQL)
@@ -344,6 +351,39 @@ func (m Model) submitExport() (tea.Model, tea.Cmd) {
 	}
 }
 
+// schemaTableNames lists tables/views sorted by name.
+func schemaTableNames(tables []db.TableMeta) []string {
+	names := make([]string, 0, len(tables))
+	for _, table := range tables {
+		names = append(names, table.Name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// fetchTableSQL builds the quick-fetch query for a table dropdown selection.
+func (m Model) fetchTableSQL(table string) string {
+	driver := db.Driver("")
+	if s := m.activeSession(); s != nil {
+		driver = s.Driver
+	} else if m.active != nil {
+		driver = m.active.Driver
+	}
+	return fmt.Sprintf("SELECT * FROM %s LIMIT %d",
+		driver.Dialect().QuoteIdent(table), fetchTableLimit)
+}
+
+// executeSQL is the shared path for editor runs and quick fetches.
+func (m Model) executeSQL(sql string) (tea.Model, tea.Cmd) {
+	m.clearNotice()
+	updated, cmd := m.startQuery(sql)
+	model := updated.(Model)
+	if s := model.activeSession(); s != nil && s.Running() {
+		return model, tea.Batch(cmd, model.recordHistory(sql))
+	}
+	return model, cmd
+}
+
 func (m Model) startQuery(sql string) (tea.Model, tea.Cmd) {
 	s := m.activeSession()
 	if s == nil {
@@ -423,14 +463,22 @@ func (m Model) handleRunnerEvent(msg sessionEventMsg) (tea.Model, tea.Cmd) {
 
 	switch event.Kind {
 	case session.EventStarted:
+		if os.Getenv("SQL_TUI_DEBUG") != "" {
+			fmt.Fprintln(os.Stderr, "event started", msg.SessionID)
+		}
 		s.Results.SetStreaming(true)
 		s.Results.SetResult(db.QueryResult{Columns: event.Columns})
 	case session.EventBatch:
 		s.Results.AppendRows(event.Rows)
 	case session.EventDone:
+		if os.Getenv("SQL_TUI_DEBUG") != "" {
+			fmt.Fprintln(os.Stderr, "event done", msg.SessionID, event.Fetched)
+		}
 		s.Results.SetStreaming(false)
+		s.Results.UpdateStats(event.RowCount, event.Fetched, event.Elapsed, event.Truncated)
 		s.Editor.ReportSuccess(event.Statements, db.QueryResult{
 			RowCount:  event.RowCount,
+			Fetched:   event.Fetched,
 			Elapsed:   event.Elapsed,
 			Truncated: event.Truncated,
 		})
@@ -503,6 +551,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.confirmClose = ""
 		}
 		return m, nil
+	}
+	if m.helpOpen {
+		return m.handleHelpKey(msg)
+	}
+	if m.menu != nil {
+		return m.handleCommandMenuKey(msg)
 	}
 	if m.cellEdit != nil {
 		return m.handleCellEditorKey(msg)
@@ -586,8 +640,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.syncFocus()
 		return m, nil
 	case key.Matches(msg, m.keys.Help) && m.focus != FocusQuery:
-		m.help.ShowAll = !m.help.ShowAll
-		m.resize()
+		m.helpOpen = true
 		return m, nil
 	case key.Matches(msg, m.keys.NewTab):
 		m.newTab()
@@ -618,20 +671,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case key.Matches(msg, m.keys.SaveFav) && m.focus == FocusQuery:
-		s := m.activeSession()
-		if s == nil {
-			return m, nil
-		}
-		if strings.TrimSpace(s.Editor.SQL()) == "" {
-			cmd := m.setNotice("nothing to save")
-			return m, cmd
-		}
-		m.favorites.OpenSave(s.Editor.SQL())
-		return m, nil
+		return m.openSaveFavorite()
 	case key.Matches(msg, m.keys.BrowseFav) && m.focus == FocusQuery:
 		m.favorites.OpenBrowse()
 		return m, nil
-	case key.Matches(msg, m.keys.Explain) && m.focus != FocusWorkspace:
+	case key.Matches(msg, m.keys.Explain) && m.focus == FocusResult:
 		return m.startExplain()
 	case key.Matches(msg, m.keys.BrowseSchema):
 		if m.active == nil {
@@ -653,17 +697,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.browser = browser
 		return m, nil
 	case key.Matches(msg, m.keys.Export) && m.focus == FocusResult:
-		s := m.activeSession()
-		if s == nil || s.Running() {
-			cmd := m.setNotice("wait for the query to finish")
-			return m, cmd
-		}
-		if _, ok := s.Results.Result(); !ok {
-			cmd := m.setNotice("no results to export")
-			return m, cmd
-		}
-		m.export = newExportDialog()
-		return m, nil
+		return m.openExport()
+	case key.Matches(msg, m.keys.Command) && m.focus != FocusQuery:
+		return m.openCommandMenu()
 	}
 	if m.focus == FocusResult {
 		s := m.activeSession()
@@ -856,6 +892,54 @@ func (m *Model) applySchemaToActive() {
 	m.applySchema(m.activeSession())
 }
 
+func (m Model) openSaveFavorite() (tea.Model, tea.Cmd) {
+	s := m.activeSession()
+	if s == nil {
+		return m, nil
+	}
+	if strings.TrimSpace(s.Editor.SQL()) == "" {
+		cmd := m.setNotice("nothing to save")
+		return m, cmd
+	}
+	m.favorites.OpenSave(s.Editor.SQL())
+	return m, nil
+}
+
+func (m Model) openExport() (tea.Model, tea.Cmd) {
+	s := m.activeSession()
+	if s == nil || s.Running() {
+		cmd := m.setNotice("wait for the query to finish")
+		return m, cmd
+	}
+	if _, ok := s.Results.Result(); !ok {
+		cmd := m.setNotice("no results to export")
+		return m, cmd
+	}
+	m.export = newExportDialog()
+	return m, nil
+}
+
+func (m Model) openSchemaBrowser() (tea.Model, tea.Cmd) {
+	if m.active == nil {
+		cmd := m.setNotice("select a connection first")
+		return m, cmd
+	}
+	if m.schemaLoad {
+		cmd := m.setNotice("schema still loading")
+		return m, cmd
+	}
+	entry, ok := m.schema.Get(m.active.ID)
+	if !ok {
+		cmd := m.setNotice("schema not loaded")
+		return m, cmd
+	}
+	browser := newSchemaBrowser()
+	browser.SetSize(m.layout().width, m.layout().height)
+	browser.Open(entry.Tables)
+	m.browser = browser
+	return m, nil
+}
+
 // computeEditability evaluates whether a session's result can be edited (§12).
 func (m Model) computeEditability(s *session.Session) session.Editability {
 	if s == nil || s.LastSQL == "" {
@@ -931,7 +1015,7 @@ func (m Model) View() string {
 
 	var queryContent, resultsContent string
 	if s := m.activeSession(); s != nil {
-		queryContent = m.tabBar(max(lay.rightW-4, 1)) + "\n" + s.Editor.View()
+		queryContent = m.tabBar(max(lay.rightW-4, 1)) + "\n" + s.Editor.EditorView()
 		resultsContent = s.Results.View()
 	} else {
 		queryContent = "no session"
@@ -964,6 +1048,10 @@ func (m Model) View() string {
 			Title: "Close tab",
 			Body:  "The query in this tab is running.\n\ny close · n cancel",
 		})
+	} else if m.helpOpen {
+		view = m.renderModal(view, lay, modalBox{Title: "Keybindings", Body: helpText()})
+	} else if m.menu != nil {
+		view = m.renderModal(view, lay, modalBox{Title: "Command menu", Body: m.commandMenuView()})
 	} else if m.cellEdit != nil {
 		title := fmt.Sprintf("Edit cell · %s (row %d)", m.cellEdit.column, m.cellEdit.row+1)
 		view = m.renderModal(view, lay, modalBox{Title: title, Body: m.cellEdit.view()})
@@ -1026,7 +1114,7 @@ func (m Model) favoritesDialog() (string, string, bool) {
 }
 
 func (m Model) statusLine(lay layout) string {
-	parts := []string{"sql-tui", "focus: " + m.focus.String()}
+	parts := []string{"sql-tui v" + Version, "focus: " + m.focus.String()}
 	if m.active != nil {
 		parts = append(parts, "conn: "+m.active.Name)
 		switch {

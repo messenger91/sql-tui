@@ -60,10 +60,25 @@ func maskDSN(dsn string) string {
 	return dsn[:colon+1] + "***" + dsn[at:]
 }
 
+type tableName struct {
+	name string
+}
+
+func (t tableName) Title() string       { return t.name }
+func (t tableName) Description() string { return "SELECT * · LIMIT 100" }
+func (t tableName) FilterValue() string { return strings.ToLower(t.name) }
+
 func items(connections []db.Connection, activeID string) []list.Item {
 	listItems := make([]list.Item, 0, len(connections))
 	for _, conn := range connections {
 		listItems = append(listItems, item{connection: conn, active: conn.ID == activeID})
 	}
 	return listItems
+}
+
+func separatorStatus(existing string) string {
+	if existing == "" {
+		return ""
+	}
+	return " · " + existing
 }

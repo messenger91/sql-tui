@@ -14,6 +14,7 @@ type keyMap struct {
 	BrowseFav    key.Binding
 	BrowseSchema key.Binding
 	Explain      key.Binding
+	Command      key.Binding
 	NewTab       key.Binding
 	CloseTab     key.Binding
 	NextTab      key.Binding
@@ -64,8 +65,12 @@ func defaultKeyMap() keyMap {
 			key.WithHelp("ctrl+b", "schema"),
 		),
 		Explain: key.NewBinding(
+			key.WithKeys("E"),
+			key.WithHelp("E", "explain"),
+		),
+		Command: key.NewBinding(
 			key.WithKeys("x"),
-			key.WithHelp("x", "explain"),
+			key.WithHelp("x", "menu"),
 		),
 		NewTab: key.NewBinding(
 			key.WithKeys("ctrl+t"),
@@ -102,6 +107,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 		{k.NewTab, k.CloseTab, k.NextTab, k.PrevTab, k.JumpTab},
 		{k.Export, k.ViewFormat},
 		{k.SaveFav, k.BrowseFav, k.BrowseSchema, k.Explain},
+		{k.Command},
 		{k.Help, k.Close},
 		{k.Quit},
 	}

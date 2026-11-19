@@ -58,8 +58,11 @@ type Model struct {
 	store   *Store
 	manager *db.Manager
 
-	list    list.Model
-	spinner spinner.Model
+	list       list.Model
+	tables     list.Model
+	tableMode  bool
+	tableNames []string
+	spinner    spinner.Model
 
 	width, height int
 	connections   []db.Connection
@@ -85,6 +88,13 @@ func New(store *Store, manager *db.Manager) Model {
 	l.SetFilteringEnabled(true)
 	l.DisableQuitKeybindings()
 
+	tables := list.New(nil, list.NewDefaultDelegate(), 20, 5)
+	tables.SetShowTitle(false)
+	tables.SetShowHelp(false)
+	tables.SetShowStatusBar(false)
+	tables.SetFilteringEnabled(true)
+	tables.DisableQuitKeybindings()
+
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 
@@ -92,6 +102,7 @@ func New(store *Store, manager *db.Manager) Model {
 		store:   store,
 		manager: manager,
 		list:    l,
+		tables:  tables,
 		spinner: s,
 	}
 }
@@ -112,6 +123,41 @@ func (m *Model) SetSize(width, height int) {
 	m.width = width
 	m.height = height
 	m.list.SetSize(max(width, 1), max(height-1, 1))
+	m.tables.SetSize(max(width, 1), max(height-1, 1))
+}
+
+// SetTables installs the table names for the quick-fetch dropdown.
+func (m *Model) SetTables(names []string) {
+	m.tableNames = append([]string(nil), names...)
+	tableItems := make([]list.Item, 0, len(names))
+	for _, name := range names {
+		tableItems = append(tableItems, tableName{name: name})
+	}
+	m.tables.SetItems(tableItems)
+	if m.tableMode {
+		m.tables.ResetSelected()
+	}
+	m.rebuildList()
+}
+
+// WorkspaceConnections exposes the in-memory connection list for tests.
+func (m Model) WorkspaceConnections() []db.Connection { return m.connections }
+
+// TablesVisible reports whether the quick-fetch dropdown is open.
+func (m Model) TablesVisible() bool { return m.tableMode }
+
+func (m *Model) toggleTables() {
+	if len(m.tableNames) == 0 {
+		return
+	}
+	m.tableMode = !m.tableMode
+	m.tables.ResetFilter()
+	m.tables.ResetSelected()
+}
+
+// FetchTableMsg asks the root model to run SELECT * FROM <table> LIMIT 100.
+type FetchTableMsg struct {
+	Table string
 }
 
 // SetActive marks the connection that the query pane is using.
@@ -129,6 +175,44 @@ func (m *Model) ActivationSucceeded(id string) {
 	m.activeID = id
 	m.busy = false
 	m.rebuildList()
+}
+
+// OpenAdd opens the add-connection form.
+func (m *Model) OpenAdd() {
+	if m.form != nil {
+		return
+	}
+	f := newForm(formAdd)
+	f.setWidth(m.width - 10)
+	m.form = f
+}
+
+// OpenEdit opens the edit form for the selected connection.
+func (m *Model) OpenEdit() {
+	connection, ok := m.selected()
+	if !ok || m.form != nil {
+		return
+	}
+	f := newForm(formEdit)
+	f.setConnection(connection)
+	f.setWidth(m.width - 10)
+	m.form = f
+}
+
+// OpenDelete asks to delete the selected connection.
+func (m *Model) OpenDelete() {
+	connection, ok := m.selected()
+	if !ok || m.confirm != nil {
+		return
+	}
+	m.confirm = &confirmDelete{connection: connection}
+}
+
+// ActivateSelected connects to the selected connection.
+func (m *Model) ActivateSelected() tea.Cmd {
+	updated, cmd := m.activateSelected()
+	*m = updated
+	return cmd
 }
 
 // CapturesInput reports whether a form or dialog must receive keys before
@@ -248,6 +332,30 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if m.tableMode {
+		if m.tables.FilterState() == list.Filtering {
+			var cmd tea.Cmd
+			m.tables, cmd = m.tables.Update(msg)
+			return m, cmd
+		}
+		switch msg.String() {
+		case "esc":
+			m.tableMode = false
+			return m, nil
+		case "enter":
+			selected := m.tables.SelectedItem()
+			if entry, ok := selected.(tableName); ok {
+				m.tableMode = false
+				name := string(entry.name)
+				return m, func() tea.Msg { return FetchTableMsg{Table: name} }
+			}
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.tables, cmd = m.tables.Update(msg)
+		return m, cmd
+	}
+
 	if m.list.FilterState() == list.Filtering {
 		var cmd tea.Cmd
 		m.list, cmd = m.list.Update(msg)
@@ -255,27 +363,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
+	case "t":
+		m.toggleTables()
+		return m, nil
 	case "a":
-		f := newForm(formAdd)
-		f.setWidth(m.width - 10)
-		m.form = f
+		m.OpenAdd()
 		return m, nil
 	case "e":
-		connection, ok := m.selected()
-		if !ok {
-			return m, nil
-		}
-		f := newForm(formEdit)
-		f.setConnection(connection)
-		f.setWidth(m.width - 10)
-		m.form = f
+		m.OpenEdit()
 		return m, nil
 	case "d":
-		connection, ok := m.selected()
-		if !ok {
-			return m, nil
-		}
-		m.confirm = &confirmDelete{connection: connection}
+		m.OpenDelete()
 		return m, nil
 	case "enter", " ":
 		return m.activateSelected()
@@ -406,17 +504,23 @@ func (m Model) View() string {
 	}
 
 	var body string
-	if len(m.connections) == 0 {
+	status := ""
+	if m.tableMode {
+		body = m.tables.View()
+		status = "esc back"
+	} else if len(m.connections) == 0 {
 		body = "no connections yet\n\na add · e edit · d delete\nenter connect"
 	} else {
 		body = m.list.View()
+		if len(m.tableNames) > 0 {
+			status = "t tables"
+		}
 	}
 
-	status := ""
 	if m.busy {
 		status = m.spinner.View() + " connecting…"
 	} else if m.status != "" {
-		status = m.status
+		status = m.status + separatorStatus(status)
 	}
 
 	view := lipgloss.JoinVertical(lipgloss.Left, body, status)

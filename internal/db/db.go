@@ -113,6 +113,7 @@ type QueryResult struct {
 	Columns   []string
 	Rows      [][]any
 	RowCount  int
+	Fetched   int
 	Truncated bool
 	Elapsed   time.Duration
 	Err       error

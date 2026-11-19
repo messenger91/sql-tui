@@ -10,6 +10,13 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "-v", "--version", "version":
+			fmt.Printf("sql-tui %s\n", app.Version)
+			return
+		}
+	}
 	model := app.New()
 	program := tea.NewProgram(model, tea.WithMouseCellMotion())
 	model.SetSender(program.Send)

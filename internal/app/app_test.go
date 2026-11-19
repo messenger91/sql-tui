@@ -84,17 +84,20 @@ func TestWindowSizeUpdatesHelpWidth(t *testing.T) {
 	}
 }
 
-func TestHelpKeyTogglesFullHelp(t *testing.T) {
+func TestHelpKeyOpensContextHelp(t *testing.T) {
 	m := newSized(t, 80, 24)
 	helpKey := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}}
 
 	m, _ = press(m, helpKey)
-	if !m.help.ShowAll {
-		t.Fatal("? did not expand help")
+	if !m.helpOpen {
+		t.Fatal("? did not open the help menu")
+	}
+	if !strings.Contains(ansi.Strip(m.View()), "Keybindings") {
+		t.Fatal("help menu not rendered")
 	}
 	m, _ = press(m, helpKey)
-	if m.help.ShowAll {
-		t.Fatal("? did not collapse help")
+	if m.helpOpen {
+		t.Fatal("? did not close the help menu")
 	}
 }
 
@@ -320,6 +323,13 @@ func openActive(t *testing.T, m Model) Model {
 // events, and feeds them into the model in order.
 func runQuerySync(t *testing.T, m Model, sql string) Model {
 	t.Helper()
+	return runMsgSync(t, m, query.ExecuteRequestedMsg{SQL: sql})
+}
+
+// runMsgSync runs any app message with a fake sender, waits for the runner
+// goroutines, and feeds their events back into the model in order.
+func runMsgSync(t *testing.T, m Model, msg tea.Msg) Model {
+	t.Helper()
 	var mu sync.Mutex
 	var messages []tea.Msg
 	m.SetSender(func(msg tea.Msg) {
@@ -328,7 +338,7 @@ func runQuerySync(t *testing.T, m Model, sql string) Model {
 		mu.Unlock()
 	})
 
-	updated, cmd := m.Update(query.ExecuteRequestedMsg{SQL: sql})
+	updated, cmd := m.Update(msg)
 	m = updated.(Model)
 	if cmd != nil {
 		_ = collectCmds(cmd)

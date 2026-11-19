@@ -122,7 +122,7 @@ func TestQuestionMarkTypesInEditor(t *testing.T) {
 	if got := m.activeSession().Editor.SQL(); got != "?" {
 		t.Fatalf("editor = %q", got)
 	}
-	if m.help.ShowAll {
-		t.Fatal("'?' toggled help while the editor was focused")
+	if m.helpOpen {
+		t.Fatal("'?' opened the help menu while the editor was focused")
 	}
 }

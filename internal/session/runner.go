@@ -28,6 +28,7 @@ type Event struct {
 	Columns    []string
 	Rows       [][]any
 	RowCount   int
+	Fetched    int
 	Statements int
 	Truncated  bool
 	Elapsed    time.Duration
@@ -54,6 +55,7 @@ func Run(ctx context.Context, handle *sql.DB, sqlText string, maxRows int, emit 
 
 	started := time.Now()
 	stored := 0
+	read := 0
 	truncated := false
 	statementsRun := 0
 
@@ -87,6 +89,7 @@ func Run(ctx context.Context, handle *sql.DB, sqlText string, maxRows int, emit 
 
 		// Each result-producing statement replaces the previous result view.
 		stored = 0
+		read = 0
 		truncated = false
 		if !emit(Event{Kind: EventStarted, Columns: columns}) {
 			_ = rows.Close()
@@ -126,6 +129,7 @@ func Run(ctx context.Context, handle *sql.DB, sqlText string, maxRows int, emit 
 				}
 				return
 			}
+			read++
 			if stored >= maxRows {
 				truncated = true
 				continue // keep draining so the connection is released cleanly
@@ -165,6 +169,7 @@ func Run(ctx context.Context, handle *sql.DB, sqlText string, maxRows int, emit 
 	emit(Event{
 		Kind:       EventDone,
 		RowCount:   stored,
+		Fetched:    read,
 		Statements: statementsRun,
 		Truncated:  truncated,
 		Elapsed:    time.Since(started),

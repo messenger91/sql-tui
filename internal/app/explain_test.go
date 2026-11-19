@@ -11,9 +11,10 @@ import (
 func TestExplainOpensPlanModal(t *testing.T) {
 	m := activateEditable(t, false)
 	m.activeSession().Editor.SetSQL("SELECT * FROM users")
-	m.focus = FocusQuery
+	m.focus = FocusResult
+	m.activeSession().Results.Focus()
 
-	m, cmd := appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	m, cmd := appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'E'}})
 	if cmd == nil {
 		t.Fatal("x produced no explain command")
 	}
@@ -36,10 +37,10 @@ func TestExplainOpensPlanModal(t *testing.T) {
 
 func TestExplainRequiresSQL(t *testing.T) {
 	m := activateEditable(t, false)
-	m.focus = FocusQuery
+	m.focus = FocusResult
 	m.activeSession().Editor.SetSQL("   ")
 
-	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'E'}})
 	if m.modal != nil {
 		t.Fatal("modal opened without SQL")
 	}

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/messenger91/sql-tui/internal/export"
+
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
@@ -344,8 +346,8 @@ func (m *Model) ReportSuccess(statements int, result db.QueryResult) {
 	m.running = false
 	m.statusIsError = false
 
-	summary := fmt.Sprintf("%s · %s · %s",
-		countLabel(statements, "statement"), countLabel(result.RowCount, "row"), FormatElapsed(result.Elapsed))
+	summary := fmt.Sprintf("%s · %s",
+		countLabel(statements, "statement"), export.ResultStats(result))
 	if result.Truncated {
 		summary += " · truncated"
 	}
@@ -420,12 +422,112 @@ func (m *Model) historyForward() {
 
 // View renders the editor, the autocomplete popup, and the status line.
 func (m Model) View() string {
-	parts := []string{m.editor.View()}
+	parts := []string{m.renderEditor()}
 	if m.popup != nil {
 		parts = append(parts, m.popupView())
 	}
 	parts = append(parts, m.statusLine())
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+// EditorView renders the syntax-highlighted editor contents for the root
+// model's query pane.
+func (m Model) EditorView() string { return m.renderEditor() }
+
+const editorPrompt = "┃ "
+const editorCaret = "▌"
+
+var hlCaret = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
+
+// renderEditor draws the SQL buffer with syntax highlighting and a block
+// cursor. The textarea still owns input/scroll state; this only renders it.
+func (m Model) renderEditor() string {
+	height := max(m.editor.Height(), 1)
+	width := max(m.width, 10)
+
+	if m.editor.Value() == "" {
+		placeholder := m.editor.Placeholder
+		if placeholder == "" {
+			placeholder = "…"
+		}
+		lines := []string{hlPlacehold.Render(placeholder)}
+		for len(lines) < height {
+			lines = append(lines, "")
+		}
+		return m.renderLines(lines, width)
+	}
+
+	text := m.editor.Value()
+	lineIndex, colIndex := locateCursor(text, m.cursorIndex())
+	lines := strings.Split(text, "\n")
+
+	top := 0
+	if lineIndex >= height {
+		top = lineIndex - height + 1
+	}
+
+	out := make([]string, 0, height)
+	for row := top; row < top+height; row++ {
+		out = append(out, m.renderEditorLine(lines, row, lineIndex, colIndex, width))
+	}
+	return m.renderLines(out, width)
+}
+
+func (m Model) renderLines(lines []string, width int) string {
+	for i, line := range lines {
+		lines[i] = ansi.Truncate(line, width, "…")
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (m Model) renderEditorLine(lines []string, row, cursorLine, cursorCol, width int) string {
+	prompt := lipgloss.NewStyle().Faint(true).Render(editorPrompt)
+	var body string
+	switch {
+	case row < 0 || row >= len(lines):
+		body = ""
+	case row != cursorLine:
+		body = HighlightLine(lines[row])
+	default:
+		runes := []rune(lines[row])
+		col := min(cursorCol, len(runes))
+		start := 0
+		if len(runes) > width-1 {
+			start = min(max(col-(width-1)/2, 0), len(runes)-(width-1))
+		}
+		end := min(start+width-1, len(runes))
+		pre := ""
+		if start > 0 {
+			pre = "…"
+		}
+		post := ""
+		if end < len(runes) {
+			post = "…"
+		}
+		visible := runes[start:end]
+		caretAt := col - start
+		body = pre +
+			HighlightLine(string(visible[:caretAt])) +
+			hlCaret.Render(editorCaret) +
+			HighlightLine(string(visible[caretAt:])) +
+			post
+	}
+	return prompt + body
+}
+
+func locateCursor(text string, cursor int) (line, col int) {
+	runes := []rune(text)
+	cursor = min(max(cursor, 0), len(runes))
+	line, col = 0, 0
+	for i := 0; i < cursor; i++ {
+		if runes[i] == '\n' {
+			line++
+			col = 0
+			continue
+		}
+		col++
+	}
+	return line, col
 }
 
 func (m Model) popupView() string {

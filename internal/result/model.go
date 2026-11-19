@@ -3,6 +3,7 @@ package result
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -189,6 +190,15 @@ func (m *Model) SetResult(result db.QueryResult) {
 	m.viewport.SetYOffset(0)
 }
 
+// UpdateStats refreshes the completion statistics after streaming.
+func (m *Model) UpdateStats(rowCount, fetched int, elapsed time.Duration, truncated bool) {
+	m.result.RowCount = rowCount
+	m.result.Fetched = fetched
+	m.result.Elapsed = elapsed
+	m.result.Truncated = truncated
+	m.rebuild()
+}
+
 // SetStreaming toggles the streaming status label. Turning it off rebuilds
 // deferred CSV/JSON views once the result is complete.
 func (m *Model) SetStreaming(streaming bool) {
@@ -308,12 +318,7 @@ func (m Model) summary() string {
 	if m.streaming {
 		return fmt.Sprintf("Streaming… %d rows · %s", m.result.RowCount, m.format)
 	}
-	rows := "rows"
-	if m.result.RowCount == 1 {
-		rows = "row"
-	}
-	line := fmt.Sprintf("%d %s · %s · %s",
-		m.result.RowCount, rows, export.FormatElapsed(m.result.Elapsed), m.format)
+	line := export.ResultStats(m.result) + " · " + string(m.format)
 	if m.result.Truncated {
 		line += " · truncated"
 	}
@@ -354,7 +359,7 @@ func (m *Model) rebuild() {
 		if err != nil {
 			text = "error: " + err.Error()
 		}
-		m.viewport.SetContent(strings.TrimRight(text, "\n"))
+		m.viewport.SetContent(export.HighlightJSON(strings.TrimRight(text, "\n")))
 	default:
 		m.rebuildTable()
 	}
