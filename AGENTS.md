@@ -2,7 +2,7 @@
 
 ## Current state
 
-Completed: all planned sections — bootstrap, `internal/db` (SQLite/MySQL/Postgres connect/execute/schema), root shell, workspace, query editor, result views/export, favorites, schema browser + autocomplete, multi-tab async streaming, and inline editing with transactional apply. **M9 is complete.** Remaining unchecked TODO items are explicitly optional or refinements (mouse, <80-column layout, in-place post-commit refresh, unique-index editing fallback). `TODO.md` is authoritative for details.
+Completed: all planned sections — bootstrap, `internal/db` (SQLite/MySQL/Postgres connect/execute/schema), root shell, workspace, query editor, result views/export, favorites, schema browser + autocomplete, multi-tab async streaming, inline editing with transactional apply, plus mouse support and narrow-terminal collapse. **M9 is complete.** Remaining unchecked TODO items are explicitly optional or refinements (in-place post-commit refresh, unique-index editing fallback). `TODO.md` is authoritative for details.
 
 ## Source of truth
 
@@ -174,6 +174,10 @@ These are easy to violate when writing the first implementation:
 ## App shell gotchas
 
 - Layout is computed from `WindowSizeMsg`; before the first resize it falls back to 80×24. `layout()` derives help height from the rendered help view, so expanding `?` full help shrinks the pane area — do not hardcode a one-line footer.
+- The workspace pane collapses progressively below 80 columns and is hidden below 25 (`wsHidden`); `tab` cycling and mouse handling must respect it (`skipHiddenWorkspace`, `handleMouse`).
+- Mouse: `main` enables `tea.WithMouseCellMotion`. `handleMouse` only acts on left-button presses and ignores clicks while any overlay is open; tab-bar clicks map through plain `tabLabels()` widths (styles must not change display width).
+- `?` toggles help only outside the query pane; inside the editor it is an ordinary character (SQL placeholders).
+- The workspace list marks the active connection with `●` and its description notes `read-only`; empty panes carry key hints (connections: `a add · e edit · d delete · enter connect`; results: `ctrl+r` hint).
 - A pane's content includes its title row: children must be sized to `outerHeight-3` (border + title), or the pane grows a line and the full-screen layout drifts. Width is `outerWidth-4` (border + horizontal padding).
 - The modal compositor (`overlay.go`) uses `github.com/charmbracelet/x/ansi` (already a transitive dep of Lip Gloss) for cell-accurate splicing. It replaces the horizontal span and keeps background margins intact; tests cover ANSI-styled backgrounds.
 - While a modal is open it swallows all keys except `ctrl+c` (quit). `esc` closes it.

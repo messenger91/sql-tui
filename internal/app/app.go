@@ -27,12 +27,14 @@ import (
 )
 
 const (
-	defaultWidth      = 80
-	defaultHeight     = 24
-	workspaceWidth    = 30
-	minWorkspaceWidth = 12
-	minBodyHeight     = 3
-	schemaTimeout     = 10 * time.Second
+	defaultWidth   = 80
+	defaultHeight  = 24
+	workspaceWidth = 30
+	minBodyHeight  = 3
+	schemaTimeout  = 10 * time.Second
+
+	// Below this width the workspace pane is hidden entirely.
+	collapseWidth = 25
 )
 
 type modalBox struct {
@@ -62,6 +64,7 @@ type Model struct {
 
 	focus         Focus
 	width, height int
+	wsHidden      bool
 	modal         *modalBox
 	export        *exportDialog
 	browser       *schemaBrowser
@@ -166,6 +169,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyMsg:
 		return m.handleKey(msg)
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
 	case workspace.ActivatedMsg:
 		connection := msg.Connection
 		m.active = &connection
@@ -541,13 +546,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Cycle):
 		m.focus = m.focus.Next()
+		m.skipHiddenWorkspace(true)
 		m.syncFocus()
 		return m, nil
 	case key.Matches(msg, m.keys.CyclePrev):
 		m.focus = m.focus.Prev()
+		m.skipHiddenWorkspace(false)
 		m.syncFocus()
 		return m, nil
-	case key.Matches(msg, m.keys.Help):
+	case key.Matches(msg, m.keys.Help) && m.focus != FocusQuery:
 		m.help.ShowAll = !m.help.ShowAll
 		m.resize()
 		return m, nil
@@ -660,7 +667,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	}
-	if m.focus == FocusWorkspace {
+	if m.focus == FocusWorkspace && !m.wsHidden {
 		var cmd tea.Cmd
 		m.workspace, cmd = m.workspace.Update(msg)
 		return m, cmd
@@ -692,6 +699,19 @@ func (m *Model) syncFocus() {
 		}
 		s.Results.Blur()
 	}
+}
+
+// skipHiddenWorkspace keeps focus out of the workspace pane when it is
+// collapsed away on very narrow terminals.
+func (m *Model) skipHiddenWorkspace(forward bool) {
+	if !m.wsHidden || m.focus != FocusWorkspace {
+		return
+	}
+	if forward {
+		m.focus = FocusQuery
+		return
+	}
+	m.focus = FocusResult
 }
 
 func (m *Model) afterTabSwitch() {
@@ -881,15 +901,15 @@ func (m Model) View() string {
 		resultsContent = "no results yet"
 	}
 
-	workspaceView := m.pane("Connections", m.workspace.View(), lay.workspaceW, lay.bodyH, m.focus == FocusWorkspace)
 	queryView := m.pane("Query", queryContent, lay.rightW, lay.queryH, m.focus == FocusQuery)
 	results := m.pane("Results", resultsContent, lay.rightW, lay.resultH, m.focus == FocusResult)
 
-	body := lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		workspaceView,
-		lipgloss.JoinVertical(lipgloss.Left, queryView, results),
-	)
+	panes := []string{lipgloss.JoinVertical(lipgloss.Left, queryView, results)}
+	if lay.workspaceW > 0 {
+		workspaceView := m.pane("Connections", m.workspace.View(), lay.workspaceW, lay.bodyH, m.focus == FocusWorkspace)
+		panes = []string{workspaceView, panes[0]}
+	}
+	body := lipgloss.JoinHorizontal(lipgloss.Top, panes...)
 	status := m.theme.Status.Width(lay.width).Render(m.statusLine(lay))
 	helpView := m.theme.Help.Width(lay.width).Render(m.help.View(m.keys))
 
@@ -924,20 +944,31 @@ func (m Model) tabBar(width int) string {
 	sessions := m.sessions.Sessions()
 	active, _ := m.sessions.Active()
 	parts := make([]string, 0, len(sessions)+1)
+	for i, label := range m.tabLabels() {
+		style := m.theme.PaneTitle
+		if i < len(sessions) {
+			style = m.theme.Status
+			if s := sessions[i]; active != nil && s.ID == active.ID {
+				style = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("62"))
+			}
+		}
+		parts = append(parts, style.Render(label))
+	}
+	return truncate(strings.Join(parts, m.theme.Status.Render(" │ ")), width)
+}
+
+// tabLabels returns the plain tab labels (last entry is the "+" affordance).
+func (m Model) tabLabels() []string {
+	sessions := m.sessions.Sessions()
+	labels := make([]string, 0, len(sessions)+1)
 	for i, s := range sessions {
 		label := fmt.Sprintf("%d: ", i+1)
 		if s.Running() {
 			label += "● "
 		}
-		label += s.Title
-		style := m.theme.Status
-		if active != nil && s.ID == active.ID {
-			style = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("62"))
-		}
-		parts = append(parts, style.Render(label))
+		labels = append(labels, label+s.Title)
 	}
-	parts = append(parts, m.theme.PaneTitle.Render("+"))
-	return truncate(strings.Join(parts, m.theme.Status.Render(" │ ")), width)
+	return append(labels, "+")
 }
 
 // sessionLabel is the tab name shown in per-session dialog titles.
@@ -1002,7 +1033,10 @@ func (m Model) statusLine(lay layout) string {
 // includes the title row, so children get height-3 (border and title removed).
 func (m *Model) resize() {
 	lay := m.layout()
-	m.workspace.SetSize(max(lay.workspaceW-4, 1), max(lay.bodyH-3, 1))
+	m.wsHidden = lay.workspaceW == 0
+	if !m.wsHidden {
+		m.workspace.SetSize(max(lay.workspaceW-4, 1), max(lay.bodyH-3, 1))
+	}
 	for _, s := range m.sessions.Sessions() {
 		s.Editor.SetSize(max(lay.rightW-4, 1), max(lay.queryH-4, 1)) // tab bar row
 		s.Results.SetSize(max(lay.rightW-4, 1), max(lay.resultH-3, 1))
@@ -1013,6 +1047,10 @@ func (m *Model) resize() {
 	}
 	if m.active != nil {
 		m.workspace.SetActive(m.active.ID)
+	}
+	if m.wsHidden && m.focus == FocusWorkspace {
+		m.focus = FocusQuery
+		m.syncFocus()
 	}
 }
 
@@ -1063,11 +1101,11 @@ func (m Model) layout() layout {
 	if ws > w*2/5 {
 		ws = w * 2 / 5
 	}
-	if ws < minWorkspaceWidth {
-		ws = minWorkspaceWidth
-	}
 	if ws > w-1 {
 		ws = w / 2
+	}
+	if w < collapseWidth {
+		ws = 0
 	}
 	rightW := w - ws
 	if rightW < 1 {

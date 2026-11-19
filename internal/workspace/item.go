@@ -11,15 +11,24 @@ import (
 
 type item struct {
 	connection db.Connection
+	active     bool
 }
 
-func (i item) Title() string       { return i.connection.Name }
+func (i item) Title() string {
+	if i.active {
+		return "● " + i.connection.Name
+	}
+	return i.connection.Name
+}
 func (i item) Description() string { return description(i.connection) }
 func (i item) FilterValue() string {
 	return strings.ToLower(i.connection.Name + " " + string(i.connection.Driver))
 }
 
 func description(conn db.Connection) string {
+	if conn.ReadOnly {
+		return fmt.Sprintf("%s · %s · read-only", conn.Driver, maskDSN(conn.DSN))
+	}
 	return fmt.Sprintf("%s · %s", conn.Driver, maskDSN(conn.DSN))
 }
 
@@ -51,10 +60,10 @@ func maskDSN(dsn string) string {
 	return dsn[:colon+1] + "***" + dsn[at:]
 }
 
-func items(connections []db.Connection) []list.Item {
+func items(connections []db.Connection, activeID string) []list.Item {
 	listItems := make([]list.Item, 0, len(connections))
 	for _, conn := range connections {
-		listItems = append(listItems, item{connection: conn})
+		listItems = append(listItems, item{connection: conn, active: conn.ID == activeID})
 	}
 	return listItems
 }

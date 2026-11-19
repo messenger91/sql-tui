@@ -11,7 +11,7 @@ import (
 
 func main() {
 	model := app.New()
-	program := tea.NewProgram(model)
+	program := tea.NewProgram(model, tea.WithMouseCellMotion())
 	model.SetSender(program.Send)
 	if _, err := program.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "sql-tui: %v\n", err)

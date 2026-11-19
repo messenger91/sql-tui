@@ -330,8 +330,8 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 ## 13. Styling & polish
 
 - [x] Define Lip Gloss theme in `internal/styles`: pane borders, focused vs blurred, header, status bar, error text, tab bar (active/inactive/running), pending-edit cell highlight, autocomplete popup. (Theme covers panes/status/help/modal/dim/error; tab bar and cell markers use inline styles because they are app-specific.)
-- [ ] Responsive layout: workspace pane fixed width (e.g., 30 cols), query and result split remaining height; collapse workspace to a tab in narrow terminals (<80 cols) if feasible. (Widths clamp gracefully; the optional <80 collapse is not implemented.)
-- [ ] Mouse support (optional): enable `tea.WithMouseCellMotion` for list/table/tab scrolling.
+- [x] Responsive layout: workspace pane fixed width (e.g., 30 cols), query and result split remaining height; collapse workspace to a tab in narrow terminals (<80 cols) if feasible. (Progressive 2/5-width collapse; hidden entirely below 25 columns and pane focus skips it.)
+- [x] Mouse support (optional): enable `tea.WithMouseCellMotion` for list/table/tab scrolling. (Click-to-focus panes, tab-bar clicks incl. `+` new tab; lists/tables/viewport scroll natively on wheel.)
 - [x] Error dialog: render `err.Error()` with `viewport` wrapping and `esc` to dismiss. (Modal bodies wrap and are clipped to the screen height; `esc` dismisses. Not a scrollable viewport.)
 - [x] Graceful shutdown: cancel all running sessions (§11), wait, `db.CloseAll()`, save any dirty state.
 

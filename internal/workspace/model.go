@@ -116,7 +116,11 @@ func (m *Model) SetSize(width, height int) {
 
 // SetActive marks the connection that the query pane is using.
 func (m *Model) SetActive(id string) {
+	if m.activeID == id {
+		return
+	}
 	m.activeID = id
+	m.rebuildList()
 }
 
 // ActivationSucceeded marks the connection active and clears the connecting
@@ -124,6 +128,7 @@ func (m *Model) SetActive(id string) {
 func (m *Model) ActivationSucceeded(id string) {
 	m.activeID = id
 	m.busy = false
+	m.rebuildList()
 }
 
 // CapturesInput reports whether a form or dialog must receive keys before
@@ -391,7 +396,7 @@ func (m Model) selected() (db.Connection, bool) {
 }
 
 func (m *Model) rebuildList() {
-	m.list.SetItems(items(m.connections))
+	m.list.SetItems(items(m.connections, m.activeID))
 }
 
 // View renders the list or its empty state, plus a status line.
@@ -402,7 +407,7 @@ func (m Model) View() string {
 
 	var body string
 	if len(m.connections) == 0 {
-		body = "no connections yet\n\npress a to add one"
+		body = "no connections yet\n\na add · e edit · d delete\nenter connect"
 	} else {
 		body = m.list.View()
 	}

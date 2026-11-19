@@ -218,7 +218,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 // View renders the active view plus the status line.
 func (m Model) View() string {
 	if !m.has {
-		return "no results yet"
+		return "no results yet\n\nctrl+r in the query pane to run something"
 	}
 	if len(m.result.Columns) == 0 {
 		return lipgloss.JoinVertical(lipgloss.Left, "statement executed", m.statusLine())
