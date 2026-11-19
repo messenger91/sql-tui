@@ -36,10 +36,11 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
   - `github.com/charmbracelet/bubbles` (`list`, `textinput`, `textarea`, `table`, `viewport`, `filepicker`, `help`, `key`, `spinner`)
   - `github.com/charmbracelet/lipgloss`
   - Pinned: bubbletea v1.3.10, bubbles v1.0.0, lipgloss v1.1.0 (v1 API line).
-- [ ] Add DB drivers behind a registry:
+- [x] Add DB drivers behind a registry:
   - MySQL: `github.com/go-sql-driver/mysql`
   - PostgreSQL: `github.com/lib/pq` or `github.com/jackc/pgx/v5/stdlib`
   - SQLite: `modernc.org/sqlite` (or `mattn/go-sqlite3`)
+  - Implemented as a `Driver` switch in `internal/db` (no mutable registry); Connect wired for all three, blank-imported drivers.
 - [ ] Add `github.com/atotto/clipboard`.
 - [ ] Add `github.com/sahilm/fuzzy` (or `github.com/lithammer/fuzzysearch/fuzzy`) for autocomplete ranking (§10).
 - [x] Create `Makefile` with `build`, `run`, `test`, `test-race`, `lint`.
@@ -48,22 +49,24 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 
 ## 2. Database abstraction layer (`internal/db`)
 
-- [ ] Define `Connection` struct: `ID`, `Name`, `Driver` (`mysql` | `postgres` | `sqlite`), `DSN`, optional `Options`, `ReadOnly bool`.
-- [ ] Define `QueryResult` struct: `Columns []string`, `Rows [][]any`, `RowCount int`, `Elapsed time.Duration`, `Err error`.
-- [ ] Define `TableMeta` struct (for §10): `Schema`, `Name`, `Kind` (table/view), `Columns []ColumnMeta`; `ColumnMeta`: `Name`, `Type`, `Nullable`, `IsPrimaryKey`, `Ordinal`.
-- [ ] Implement `Connect(ctx, conn Connection) (*sql.DB, error)` using a driver switch (`sql.Open` + `PingContext`).
-- [ ] Implement `Execute(ctx, db *sql.DB, sql string) QueryResult`:
+- [x] Define `Connection` struct: `ID`, `Name`, `Driver` (`mysql` | `postgres` | `sqlite`), `DSN`, optional `Options`, `ReadOnly bool`.
+- [x] Define `QueryResult` struct: `Columns []string`, `Rows [][]any`, `RowCount int`, `Elapsed time.Duration`, `Err error`. (`Truncated bool` added for the §6.4 cap.)
+- [x] Define `TableMeta` struct (for §10): `Schema`, `Name`, `Kind` (table/view), `Columns []ColumnMeta`; `ColumnMeta`: `Name`, `Type`, `Nullable`, `IsPrimaryKey`, `Ordinal`. (`ForeignKeys []ForeignKey` added for §10.2 FK hints.)
+- [x] Implement `Connect(ctx, conn Connection) (*sql.DB, error)` using a driver switch (`sql.Open` + `PingContext`). SQLite is capped at one physical connection so `:memory:` stays consistent.
+- [x] Implement `Execute(ctx, db *sql.DB, sql string) QueryResult`:
   - Use `db.QueryContext` for rows; capture `Columns()`.
   - Scan each row into `[]any` via `rows.Scan(ptrs...)`.
   - Handle both result-returning and non-result statements (`ExecContext` fallback when `QueryContext` returns no columns).
   - Guard against unbounded result sets (see §6.4).
+  - Implemented as `Execute(ctx, db, sql, maxRows)`: a successful `QueryContext` is never retried as `ExecContext` (that would re-run INSERTs); `ExecContext` is used only when the query reports "no result set".
 - [ ] Implement `LoadSchema(ctx, db *sql.DB, driver Driver) ([]TableMeta, error)`:
   - MySQL/Postgres: query `information_schema.tables` / `information_schema.columns` / `information_schema.key_column_usage` (scope to the current DB/schema).
   - SQLite: `sqlite_master` for tables/views + `PRAGMA table_info(<t>)` per table; `PRAGMA foreign_key_list(<t>)` for FKs.
   - Return stable, sorted results; tolerate permission errors (partial schema is OK).
-- [ ] Add connection lifecycle management: `CloseAll()` on app quit; per-connection `context` cancellation.
+  - SQLite path implemented and tested; MySQL/Postgres return `ErrUnsupportedSchema` until M5.
+- [x] Add connection lifecycle management: `CloseAll()` on app quit; per-connection `context` cancellation. (Implemented as `db.Manager` with Open/Get/Close/CloseAll; query contexts stay caller-owned.)
 - [ ] Store DSNs securely? MVP: plaintext in config file under `~/.config/sql-tui/connections.json`; note a future `keyring` option.
-- [ ] Placeholder style: expose `Dialect` (`mysql` = `?`, `postgres` = `$n`, `sqlite` = `?`) for §12 DML generation.
+- [x] Placeholder style: expose `Dialect` (`mysql` = `?`, `postgres` = `$n`, `sqlite` = `?`) for §12 DML generation. (`Dialect` also carries identifier quoting: backticks/MySQL, double quotes/Postgres+SQLite.)
 
 ---
 

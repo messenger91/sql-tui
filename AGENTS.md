@@ -2,7 +2,7 @@
 
 ## Current state
 
-Bootstrap (§0–§1) is complete: module, directory skeleton, `Makefile`, and a placeholder `cmd/sql-tui/main.go` exist. There is no `internal/...` code or test suite yet, so `go test ./...` currently reports "no test files" — don't treat that as verification of anything. `internal/app` will replace the placeholder model in §3. `TODO.md` is the authoritative plan; check it for what is actually implemented.
+Completed: §0–§2 (bootstrap, `internal/db` with full SQLite support) plus a placeholder `cmd/sql-tui/main.go`. `internal/app` and the three-pane shell are still §3 work. MySQL/Postgres connect but schema introspection returns `ErrUnsupportedSchema` until M5. `TODO.md` is the authoritative plan; check it for what is actually implemented.
 
 ## Source of truth
 
@@ -39,6 +39,13 @@ These are easy to violate when writing the first implementation:
 - **Inline editing is gated.** It is enabled only when the connection has `ReadOnly == false` *and* the result maps to a single table with a detectable PK/unique key. Pending edits are applied in one transaction with rollback and `RowsAffected == 1` checks; never write immediately on a cell edit.
 - **Goroutine hygiene is testable.** Cancellation must use `context`, runners must be tracked and drained on quit (`CloseAll`) and covered by `go test -race` plus `go.uber.org/goleak` in the session package.
 - **Drivers are a registry, not ad-hoc imports.** `internal/db` owns a driver switch/registry exposing `Connect`, `Execute`, `LoadSchema`, and a `Dialect` value used by §12 DML generation.
+
+## `internal/db` gotchas
+
+- `Execute(ctx, handle, query, maxRows)` takes the row cap explicitly; `maxRows <= 0` means `DefaultMaxRows`. A successful `QueryContext` is **never** retried as `ExecContext` — retrying would double-run `INSERT`s. `ExecContext` is only used when the driver reports "no result set".
+- SQLite handles are capped at **one physical connection** so `:memory:` has one consistent database. Never run a query while still iterating another `*sql.Rows` on the same handle; `LoadSchema` deliberately closes the `sqlite_master` listing before issuing PRAGMAs.
+- `Connection{}` has `ReadOnly: false`; use `db.NewConnection(...)` when constructing a user connection so the read-only default applies. Persistence code must not unmarshal into a fresh `Connection` and lose that default.
+- `LoadSchema` returns partial results plus a joined error when only some objects fail. MySQL/Postgres introspection is not implemented yet.
 
 ## Decided behavior (approved during planning)
 
