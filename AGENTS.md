@@ -2,7 +2,7 @@
 
 ## Current state
 
-Completed: §0–§9 — bootstrap, `internal/db` (SQLite, MySQL, and Postgres: connect, execute, schema), root TUI shell, workspace pane, query editor, table/CSV/JSON result views, view toggle, and export to file or clipboard. **M3, M4, and M5 are complete; §10 is complete; §11 is complete (M7 done).** Next: M8 (§12 inline editing) — start with the required design note. `TODO.md` is authoritative for what is implemented.
+Completed: §0–§9 — bootstrap, `internal/db` (SQLite, MySQL, and Postgres: connect, execute, schema), root TUI shell, workspace pane, query editor, table/CSV/JSON result views, view toggle, and export to file or clipboard. **M3, M4, and M5 are complete; §10 and §11 are complete; §12.1 is complete.** Next: §12.2 cell editing UX. `TODO.md` is authoritative for what is implemented.
 
 ## Source of truth
 
@@ -50,6 +50,14 @@ These are easy to violate when writing the first implementation:
 - Activation is message-based: workspace emits `ActivatedMsg`; the root model focuses the query pane, calls `workspace.ActivationSucceeded` (which also clears the `connecting…` spinner), and starts an async `db.LoadSchema`. Editing the active connection re-emits `ActivatedMsg` so the schema is reloaded. If a new activation message is ever added, clear `busy` there too or the spinner runs forever.
 - DSNs are masked in the list (`maskDSN`), but the form and the on-disk JSON keep them plaintext.
 - `main` must call `model.Close()` after `tea.NewProgram(...).Run()`; the manager is a pointer inside a copied model, so closing there releases all handles.
+
+## Inline editing gotchas
+
+- Eligibility is computed on `EventDone` from `Session.LastSQL`, the result columns, the cached schema index, and `Session.ReadOnly`. Results without a result set keep an empty `Editability`.
+- `Session.ReadOnly` is copied from the connection when a tab is bound/reused; other sessions are unaffected. A read-only connection reports `read-only (connection read-only)`.
+- `query.SimpleSelectTable` is shallow: rejects `(`, joins, `GROUP BY`/`HAVING`, `UNION`/`INTERSECT`/`EXCEPT`, `DISTINCT`, multiple statements, multiple FROM tables; allows WHERE/ORDER/LIMIT/OFFSET and aliases.
+- PK-only eligibility is deliberate (approved 2026): no unique-index fallback yet. Result columns must map exactly by name; aliases and duplicate columns are read-only.
+- Status reason strings come from `session.ComputeEditability`; keep them short or the footer truncates.
 
 ## Async runner gotchas
 

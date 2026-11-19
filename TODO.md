@@ -288,10 +288,10 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 > **Gate**: entire feature is off unless the connection has `ReadOnly == false` *and* the result set maps to a single table with a detectable PK/unique key. Otherwise the table is read-only and cell-edit keys are inert with a status hint. This promotes the "read-only guard" stretch item to a required part of this feature.
 
 ### 12.1 Eligibility detection
-- [ ] On query completion, attempt to map the result to a base table:
-  - Parse the query (reuse §10.3 tokenizer, shallow) — MVP: only attempt when the query is a simple `SELECT … FROM <table>` with no `JOIN`/`GROUP BY`/aggregates/subqueries; otherwise mark result non-editable.
-  - Use cached `TableMeta` (§10.1) to confirm the table exists and identify PK columns (fallback: first `UNIQUE NOT NULL` index; else non-editable).
-- [ ] Surface editability in the status line: `Editable · PK: id` vs `Read-only (no PK)` vs `Read-only (complex query)`.
+- [x] On query completion, attempt to map the result to a base table:
+  - Parse the query (reuse §10.3 tokenizer, shallow) — MVP: only attempt when the query is a simple `SELECT … FROM <table>` with no `JOIN`/`GROUP BY`/aggregates/subqueries; otherwise mark result non-editable. (`query.SimpleSelectTable`; function calls/subqueries/UNION/DISTINCT also rejected.)
+  - Use cached `TableMeta` (§10.1) to confirm the table exists and identify PK columns (fallback: first `UNIQUE NOT NULL` index; else non-editable). (PK-only per approved decision; unique-index introspection deferred. Result columns must map exactly; aliases/duplicates are read-only.)
+- [x] Surface editability in the status line: `Editable · PK: id` vs `Read-only (no PK)` vs `Read-only (complex query)`. (Rendered as `editable: PK id` or `read-only (<reason>)`.)
 
 ### 12.2 Cell editing UX
 - [ ] In the table view, `e`/`enter` on the focused cell opens a `textinput` editor overlay pre-filled with the current value; `ctrl+n` toggles `NULL` (only if the column is nullable).

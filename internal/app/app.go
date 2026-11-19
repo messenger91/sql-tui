@@ -166,7 +166,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.active = &connection
 		m.focus = FocusQuery
 		m.workspace.ActivationSucceeded(connection.ID)
-		m.focusSessionForConnection(connection.ID)
+		m.focusSessionForConnection(connection)
 		m.syncFocus()
 		cmd := m.refreshSchema(connection)
 		return m, cmd
@@ -327,6 +327,8 @@ func (m Model) startQuery(sql string) (tea.Model, tea.Cmd) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	s.Title = session.DeriveTitle(sql)
+	s.LastSQL = sql
+	s.Editability = session.Editability{}
 	s.MarkRunning(cancel)
 	s.Editor.MarkRunning()
 	m.cancelRequested = false
@@ -388,6 +390,7 @@ func (m Model) handleRunnerEvent(msg sessionEventMsg) (tea.Model, tea.Cmd) {
 			Truncated: event.Truncated,
 		})
 		s.MarkDone()
+		s.Editability = m.computeEditability(s)
 		if active := m.activeSession(); active != nil && active.ID == s.ID {
 			m.focus = FocusResult
 			m.syncFocus()
@@ -646,32 +649,39 @@ func (m *Model) jumpToTab(key string) {
 	m.afterTabSwitch()
 }
 
-func (m *Model) focusSessionForConnection(connectionID string) {
+func (m *Model) focusSessionForConnection(connection db.Connection) {
 	if s := m.activeSession(); s != nil && s.ConnectionID == "" && !s.Running() {
-		s.ConnectionID = connectionID
+		s.ConnectionID = connection.ID
+		s.ReadOnly = connection.ReadOnly
 		m.applySchema(s)
 		return
 	}
 	for _, s := range m.sessions.Sessions() {
-		if s.ConnectionID == connectionID {
+		if s.ConnectionID == connection.ID {
+			s.ReadOnly = connection.ReadOnly
 			m.sessions.SetActive(s.ID)
 			m.applySchema(s)
 			return
 		}
 	}
-	s := m.sessions.New(connectionID)
+	s := m.sessions.New(connection.ID)
+	s.ReadOnly = connection.ReadOnly
 	m.applySchema(s)
 }
 
 func (m *Model) newTab() {
 	connectionID := ""
+	readOnly := true
 	if s := m.activeSession(); s != nil {
 		connectionID = s.ConnectionID
+		readOnly = s.ReadOnly
 	}
 	if connectionID == "" && m.active != nil {
 		connectionID = m.active.ID
+		readOnly = m.active.ReadOnly
 	}
 	s := m.sessions.New(connectionID)
+	s.ReadOnly = readOnly
 	m.applySchema(s)
 	m.focus = FocusQuery
 	m.syncFocus()
@@ -681,10 +691,13 @@ func (m *Model) closeSession(id session.ID) {
 	m.sessions.Close(id)
 	if m.sessions.Len() == 0 {
 		connectionID := ""
+		readOnly := true
 		if m.active != nil {
 			connectionID = m.active.ID
+			readOnly = m.active.ReadOnly
 		}
 		s := m.sessions.New(connectionID)
+		s.ReadOnly = readOnly
 		m.applySchema(s)
 	}
 	m.syncFocus()
@@ -707,6 +720,22 @@ func (m *Model) applySchema(s *session.Session) {
 
 func (m *Model) applySchemaToActive() {
 	m.applySchema(m.activeSession())
+}
+
+// computeEditability evaluates whether a session's result can be edited (§12).
+func (m Model) computeEditability(s *session.Session) session.Editability {
+	if s == nil || s.LastSQL == "" {
+		return session.Editability{}
+	}
+	entry, ok := m.schema.Get(s.ConnectionID)
+	if !ok {
+		return session.ComputeEditability(s.LastSQL, nil, nil, s.ReadOnly)
+	}
+	result, hasResult := s.Results.Result()
+	if !hasResult {
+		return session.Editability{}
+	}
+	return session.ComputeEditability(s.LastSQL, result.Columns, entry.Index, s.ReadOnly)
 }
 
 func (m Model) handleBrowserKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -870,6 +899,16 @@ func (m Model) statusLine(lay layout) string {
 	}
 	parts = append(parts, fmt.Sprintf("%d×%d", lay.width, lay.height))
 	line := strings.Join(parts, " · ")
+	if s := m.activeSession(); s != nil {
+		if _, hasResult := s.Results.Result(); hasResult {
+			switch {
+			case s.Editability.Editable:
+				line += " · editable: PK " + strings.Join(s.Editability.PrimaryKey, ", ")
+			case s.Editability.Reason != "":
+				line += " · read-only (" + s.Editability.Reason + ")"
+			}
+		}
+	}
 	if m.notice != "" {
 		line = m.notice + " · " + line
 	}

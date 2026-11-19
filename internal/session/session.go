@@ -39,6 +39,10 @@ type Session struct {
 	State     State
 	StartedAt time.Time
 
+	ReadOnly    bool
+	LastSQL     string
+	Editability Editability
+
 	cancel context.CancelFunc
 }
 
@@ -51,6 +55,7 @@ func New(id ID, connectionID string) *Session {
 		Editor:       query.New(),
 		Results:      result.New(),
 		State:        StateIdle,
+		ReadOnly:     true,
 	}
 }
 
