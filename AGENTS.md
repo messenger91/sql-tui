@@ -51,6 +51,13 @@ These are easy to violate when writing the first implementation:
 - DSNs are masked in the list (`maskDSN`), but the form and the on-disk JSON keep them plaintext.
 - `main` must call `model.Close()` after `tea.NewProgram(...).Run()`; the manager is a pointer inside a copied model, so closing there releases all handles.
 
+## Table info / DBML gotchas
+
+- `db.GetTableInfo` is per-driver; the Postgres DDL is *reconstructed* from introspected columns/constraints (not pg_dump), and SQLite/MySQL use real DDL. Views are supported on all three.
+- The doc viewer (`app.docViewer`) is a full-width scrollable overlay; it is wired into `resize()` (`resizeDoc`) and into `anyOverlayOpen`. Add new doc producers with `openDoc`, not bespoke modals.
+- Workspace keys: `i` works only in the table dropdown (emits `workspace.TableInfoMsg`); `D` emits `workspace.DBMLMsg` from either mode — it is handled in the main switch, NOT the table-mode branch.
+- DBML is generated from the cached schema (`schema.Cache`), so it needs a loaded schema; `openDBML` notices when it is missing.
+
 ## UI gotchas (post-spec batch)
 
 - The query editor is *rendered* by `query.Model.renderEditor` (highlight + block caret); the textarea only owns input/scroll state. Anything that reads editor output must use `EditorView()`, and `renderLines` clips to `m.width`.

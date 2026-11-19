@@ -366,6 +366,9 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 - [x] Bulk command menu on `x` (add/edit/delete/connect, favorites, tabs, export, schema, quit); `E` explains.
 - [x] App version in the status bar and `--version`/`version` flag.
 - [x] Full TUI smoke test pass (dropdown fetch, help/command menus, highlight, JSON view, stats).
+- [x] Table info viewer (`i` in the table dropdown): Columns, Foreign Keys, Indexes, Constraints, DDL per driver (SQLite real DDL; MySQL SHOW CREATE; Postgres reconstructed + view definitions).
+- [x] Visual DBML per connection (`D` in the workspace, also in the `x` menu): dbdiagram.io-style output with `[pk]`/`not null` settings, refs, and views as comments.
+- [x] Full-screen scrollable document viewer for table info/DBML with resize handling.
 
 ### Stretch
 

@@ -31,6 +31,10 @@ apply.
   autocomplete popup (`ctrl+space`). `E` shows the driver query plan.
 - **Schema browser** (`ctrl+b`): expandable table/view/column tree with PK and
   FK hints, fuzzy filter, and identifier insertion at the cursor.
+- **Table info** (`i` in the table dropdown): columns, foreign keys, indexes,
+  constraints, and the DDL for any table or view.
+- **Visual DBML** (`D`): render the whole connection schema as
+  [dbdiagram.io](https://dbdiagram.io)-style Database Markup Language.
 - **Results**: table / CSV / JSON views (`v`), capped at 10,000 rows with
   truncation markers, Markdown/CSV/JSON export to file or clipboard
   (`ctrl+e`), plus column hide/resize (`H`, `[`, `]`, `0`).
@@ -89,6 +93,8 @@ DSNs are stored in plaintext locally; passwords are masked in the list UI.
 | `x` | command menu (add/connect/favorites/tabs/export/quit) |
 | `E` | EXPLAIN the current statement (`Query plan` modal) |
 | `t` | table dropdown in the connections pane (`enter` fetches LIMIT 100) |
+| `i` | table info: columns, FKs, indexes, constraints, DDL (in the dropdown) |
+| `D` | view the connection schema as DBML (also in the `x` menu) |
 | `ctrl+s` / `ctrl+f` | save / browse favorites |
 | `v` | cycle table → CSV → JSON (results pane) |
 | `ctrl+e` | export CSV/JSON to file or clipboard (results pane) |
