@@ -38,8 +38,9 @@ apply.
 - **Results**: table / CSV / JSON views (`v`) with a virtualized renderer for
   large result sets, an in-memory row cap configurable via
   `settings.json` (`max_rows`, default 10,000, up to 1,000,000), truncation
-  markers, Markdown/CSV/JSON export to file or clipboard (`ctrl+e`), and
-  column hide/resize (`H`, `[`, `]`, `0`).
+  markers, Markdown/CSV/JSON export to file or clipboard (`ctrl+e`),
+  column hide/resize (`H`, `[`, `]`, `0`), and sorting by the selected
+  column (`s`, or click a header cell).
 - **Favorites**: named SQL snippets persisted to `favorites.json`
   (`ctrl+s` to save, `ctrl+f` to browse).
 - **Multi-tab sessions**: one editor + result view per tab, executed

@@ -184,6 +184,7 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 - [x] Maintain current format in root model; re-render the response pane accordingly. (Format state lives in `result.Model`, owned by the root model.)
 - [x] Status line reflects current format (e.g., `View: JSON`).
 - [x] Preserve scroll position per format? MVP: reset to top on switch; note improvement. (Cursor and scroll reset on every switch.)
+- [x] Sortable result table: `s` (or a header click) sorts by the selected column, ascending first and descending on repeat; NULLs stay last. Rows are reordered in place and pending edits remap with them.
 
 ---
 

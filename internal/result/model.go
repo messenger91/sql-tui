@@ -2,6 +2,7 @@ package result
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -57,6 +58,13 @@ type Model struct {
 	virtualCursor int
 	rowCache      map[int][]string
 	widthsCache   []int
+	columnWidths  []int
+
+	// Sort state is applied by reordering result.Rows in place; callers must
+	// remap pending row indexes through the returned permutation.
+	sortName     string
+	sortAsc      bool
+	orderVersion int
 
 	format Format
 	width  int
@@ -184,6 +192,176 @@ func (m *Model) ResetColumnLayout() {
 	m.rebuild()
 }
 
+// SortColumn sorts rows by the named column. Sorting the active column again
+// flips the direction; a new column starts ascending. It returns the old→new
+// row index permutation so callers can remap pending edits, plus whether the
+// sort was applied.
+func (m *Model) SortColumn(name string) ([]int, bool) {
+	if !m.has || m.streaming || len(m.result.Rows) == 0 {
+		return nil, false
+	}
+	index := m.columnIndex(name)
+	if index < 0 {
+		return nil, false
+	}
+	if strings.EqualFold(m.sortName, m.result.Columns[index]) {
+		m.sortAsc = !m.sortAsc
+	} else {
+		m.sortName = m.result.Columns[index]
+		m.sortAsc = true
+	}
+	selected := max(m.selectedRow(), 0)
+	perm := m.applySort(index, m.sortAsc)
+	m.selectRow(perm, selected)
+	m.orderVersion++
+	m.rebuild()
+	return perm, true
+}
+
+// ToggleSort sorts by the selected column (ascending first, then descending).
+func (m *Model) ToggleSort() ([]int, bool) {
+	_, name, _, ok := m.SelectedCell()
+	if !ok {
+		return nil, false
+	}
+	return m.SortColumn(name)
+}
+
+// Resort re-applies the active sort after rows were mutated in place. It is
+// used after post-apply row mutations, when pending edits have been cleared,
+// so no permutation is returned.
+func (m *Model) Resort() {
+	if m.sortName == "" || !m.has {
+		return
+	}
+	index := m.columnIndex(m.sortName)
+	if index < 0 {
+		return
+	}
+	m.applySort(index, m.sortAsc)
+	if m.virtual {
+		m.virtualCursor = min(max(m.virtualCursor, 0), max(len(m.result.Rows)-1, 0))
+	} else if len(m.result.Rows) > 0 {
+		m.table.SetCursor(min(max(m.table.Cursor(), 0), len(m.result.Rows)-1))
+	}
+	m.invalidateRowCache()
+	m.rebuild()
+}
+
+// Sorted reports whether a sort is active.
+func (m Model) Sorted() bool { return m.sortName != "" }
+
+// OrderVersion increases whenever the row order changes due to a user sort.
+// Async apply handlers compare it to detect a sort during the transaction.
+func (m Model) OrderVersion() int { return m.orderVersion }
+
+// SelectColumn moves the cell cursor to the named visible column.
+func (m *Model) SelectColumn(name string) {
+	for position, index := range m.visibleColumns() {
+		if strings.EqualFold(m.result.Columns[index], name) {
+			m.cellCol = position
+			return
+		}
+	}
+}
+
+// ColumnAt maps an offset inside the rendered header row (content-relative,
+// zero-based) to a column name. Cells are padded by one space on each side.
+func (m Model) ColumnAt(offset int) (string, bool) {
+	if !m.has || offset < 0 || len(m.columnWidths) == 0 {
+		return "", false
+	}
+	visible := m.visibleColumns()
+	position := 0
+	for i, width := range m.columnWidths {
+		block := width + 2
+		if offset < position+block {
+			if i < len(visible) {
+				return m.result.Columns[visible[i]], true
+			}
+			return "", false
+		}
+		position += block
+	}
+	return "", false
+}
+
+// columnIndex finds a result column by name (case-insensitive).
+func (m Model) columnIndex(name string) int {
+	for index, column := range m.result.Columns {
+		if strings.EqualFold(column, name) {
+			return index
+		}
+	}
+	return -1
+}
+
+// sortIndicator renders the header arrow for the active sort column.
+func (m Model) sortIndicator(index int) string {
+	if m.sortName == "" || index < 0 || index >= len(m.result.Columns) {
+		return ""
+	}
+	if !strings.EqualFold(m.sortName, m.result.Columns[index]) {
+		return ""
+	}
+	if m.sortAsc {
+		return " ▲"
+	}
+	return " ▼"
+}
+
+// applySort reorders result.Rows by the given column and returns the
+// old→new index permutation.
+func (m *Model) applySort(index int, ascending bool) []int {
+	count := len(m.result.Rows)
+	order := make([]int, count)
+	for i := range order {
+		order[i] = i
+	}
+	sort.SliceStable(order, func(i, j int) bool {
+		a := columnValue(m.result.Rows[order[i]], index)
+		b := columnValue(m.result.Rows[order[j]], index)
+		if a == nil || b == nil {
+			// Keep NULLs last in both directions.
+			return compareForSort(a, b) < 0
+		}
+		compare := compareForSort(a, b)
+		if !ascending {
+			compare = -compare
+		}
+		return compare < 0
+	})
+	rows := make([][]any, count)
+	perm := make([]int, count)
+	for position, previous := range order {
+		rows[position] = m.result.Rows[previous]
+		perm[previous] = position
+	}
+	m.result.Rows = rows
+	m.invalidateRowCache()
+	return perm
+}
+
+// selectRow moves the cursor to the new position of a previously selected row.
+func (m *Model) selectRow(perm []int, previous int) {
+	if previous < 0 || previous >= len(perm) {
+		return
+	}
+	position := perm[previous]
+	if m.virtual {
+		m.virtualCursor = position
+		return
+	}
+	m.table.SetCursor(position)
+}
+
+func columnValue(row []any, index int) any {
+	if index < 0 || index >= len(row) {
+		return nil
+	}
+	return row[index]
+}
+
 // SetSize updates the available content area (excluding pane border/title).
 func (m *Model) SetSize(width, height int) {
 	m.width = max(width, 4)
@@ -208,6 +386,9 @@ func (m *Model) SetResult(result db.QueryResult) {
 	m.cellCol = 0
 	m.pendingRows = make(map[int]bool)
 	m.pendingCount = 0
+	m.sortName = ""
+	m.sortAsc = true
+	m.orderVersion++
 	m.syncVirtualMode()
 	m.virtualCursor = 0
 	m.invalidateRowCache()
@@ -399,6 +580,13 @@ func (m Model) summary() string {
 	if hidden := m.hiddenCount(); hidden > 0 {
 		line += fmt.Sprintf(" · %d hidden", hidden)
 	}
+	if m.sortName != "" {
+		arrow := "▲"
+		if !m.sortAsc {
+			arrow = "▼"
+		}
+		line += fmt.Sprintf(" · sort %s %s", m.sortName, arrow)
+	}
 	return line
 }
 
@@ -450,7 +638,7 @@ func (m *Model) rebuildTable() {
 	columns := make([]table.Column, len(visible))
 	natural := make([]int, len(visible))
 	for position, index := range visible {
-		natural[position] = ansi.StringWidth(m.result.Columns[index])
+		natural[position] = ansi.StringWidth(m.result.Columns[index] + m.sortIndicator(index))
 	}
 
 	rows := export.ValueRows(m.result)
@@ -481,8 +669,10 @@ func (m *Model) rebuildTable() {
 
 	widths := fitWidths(natural, m.width)
 	for position, index := range visible {
-		columns[position] = table.Column{Title: m.result.Columns[index], Width: widths[position]}
+		title := m.result.Columns[index] + m.sortIndicator(index)
+		columns[position] = table.Column{Title: title, Width: widths[position]}
 	}
+	m.columnWidths = widths
 	// Reset rows first: table.SetColumns/SetRows re-render against the
 	// previous shape and would panic when the visible column count changes.
 	cursor := m.table.Cursor()

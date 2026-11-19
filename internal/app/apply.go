@@ -19,6 +19,7 @@ type applyDoneMsg struct {
 	Outcome   session.ApplyOutcome
 	Mutations []session.RowMutation
 	Refresh   bool // mutations computed successfully; view can refresh in place
+	Order     int  // result order version captured when the apply started
 }
 
 // startApply snapshots pending changes and runs the transaction in a command.
@@ -41,6 +42,7 @@ func (m Model) startApply(s *session.Session) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	sessionID := s.ID
+	order := s.Results.OrderVersion()
 	// Snapshot the result for the in-place post-commit refresh.
 	snapshot, hasSnapshot := s.Results.Result()
 	if hasSnapshot {
@@ -51,7 +53,7 @@ func (m Model) startApply(s *session.Session) (tea.Model, tea.Cmd) {
 		ctx, cancel := context.WithTimeout(context.Background(), applyTimeout)
 		defer cancel()
 		outcome := plan.Apply(ctx, handle)
-		msg := applyDoneMsg{SessionID: sessionID, Outcome: outcome}
+		msg := applyDoneMsg{SessionID: sessionID, Outcome: outcome, Order: order}
 		if outcome.Err != nil {
 			return msg
 		}
@@ -93,6 +95,11 @@ func (m Model) handleApplyDone(msg applyDoneMsg) (tea.Model, tea.Cmd) {
 	m.needsRefresh = false
 
 	noticeText := fmt.Sprintf("%d statement(s) applied", outcome.Applied)
+	if msg.Refresh && msg.Order != s.Results.OrderVersion() {
+		// The result was re-sorted while the transaction ran; the mutation
+		// indexes no longer match. Fall back to re-running the query.
+		msg.Refresh = false
+	}
 	if msg.Refresh && len(msg.Mutations) > 0 && s.LastSQL != "" {
 		// In-place refresh: replay the row mutations, keep editability.
 		for _, mutation := range msg.Mutations {
@@ -105,6 +112,9 @@ func (m Model) handleApplyDone(msg applyDoneMsg) (tea.Model, tea.Cmd) {
 				s.Results.AppendRows([][]any{mutation.Raw})
 			}
 		}
+		// Re-apply an active sort once every mutation is replayed, so the
+		// indexes stay valid throughout the loop.
+		s.Results.Resort()
 		cmd := m.setNotice(noticeText)
 		return m, cmd
 	}

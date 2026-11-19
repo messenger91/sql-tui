@@ -51,6 +51,14 @@ These are easy to violate when writing the first implementation:
 - DSNs are masked in the list (`maskDSN`), but the form and the on-disk JSON keep them plaintext.
 - `main` must call `model.Close()` after `tea.NewProgram(...).Run()`; the manager is a pointer inside a copied model, so closing there releases all handles.
 
+## Sorting gotchas
+
+- Sorting reorders `result.Rows` in place (`SortColumn`/`ToggleSort` return an old→new index permutation). The app remaps `session.Pending` through it (`Pending.Remap`) and calls `syncPending`; never sort rows without remapping pending edits.
+- `s` is handled in `app.handleKey` for `FocusResult` (table format only), not in `result.Model.Update`; header clicks are handled in `app.handleMouse` via `result.ColumnAt` (content offset = `X - workspaceW - 2`, header row = `queryH+2`).
+- Sorting is blocked while streaming (`result.Model.streaming`). The sort indicator lives in the column title (▲/▼) and the status line (`sort <name> ▲`); `columnWidths` must be kept in sync for hit-testing.
+- NULLs always sort last in both directions; numeric comparisons are type-aware (ints before floats) and mixed types fall back to the formatted text.
+- Post-apply replay must not re-sort per mutation (indexes would shift). `handleApplyDone` replays every mutation, then calls `Results.Resort()` once. `ApplyDoneMsg.Order` carries `OrderVersion`; a re-sort (or new result) during the transaction disables the in-place refresh and falls back to re-running the query.
+
 ## Virtualized table gotchas
 
 - `result.Model` runs two renderers: bubbles/table below `virtualThreshold` (5,000 rows) and a hand-rolled window renderer above it (`virtualView`). Keep both behaviors in sync when touching columns, pending markers, or in-place mutations.

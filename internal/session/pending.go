@@ -132,6 +132,33 @@ func (p *Pending) RevertAll() {
 	p.Snapshots = make(map[int][]result.ColumnValue)
 }
 
+// Remap re-keys pending edits after the result rows were reordered. perm maps
+// old row indexes to their new positions.
+func (p *Pending) Remap(perm []int) {
+	if len(perm) == 0 {
+		return
+	}
+	cells := make(map[int]map[string]CellEdit, len(p.Cells))
+	for row, edits := range p.Cells {
+		if row >= 0 && row < len(perm) {
+			cells[perm[row]] = edits
+		}
+	}
+	ops := make(map[int]RowOperation, len(p.Ops))
+	for row, op := range p.Ops {
+		if row >= 0 && row < len(perm) {
+			ops[perm[row]] = op
+		}
+	}
+	snapshots := make(map[int][]result.ColumnValue, len(p.Snapshots))
+	for row, values := range p.Snapshots {
+		if row >= 0 && row < len(perm) {
+			snapshots[perm[row]] = values
+		}
+	}
+	p.Cells, p.Ops, p.Snapshots = cells, ops, snapshots
+}
+
 // ParseCellValue validates and converts text according to the column type.
 // NULL is handled by the caller (ctrl+n); empty text is invalid for non-text
 // columns.

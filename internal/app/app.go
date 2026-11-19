@@ -641,6 +641,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 	}
+	if m.focus == FocusResult && msg.String() == "s" {
+		if s := m.activeSession(); s != nil && s.Results.Format() == result.FormatTable {
+			if _, name, _, ok := s.Results.SelectedCell(); ok {
+				m.sortResultsByColumn(s, name)
+			}
+			return m, nil
+		}
+	}
 	if m.focus == FocusResult {
 		s := m.activeSession()
 		if s != nil && m.needsRefresh && msg.String() == "r" {

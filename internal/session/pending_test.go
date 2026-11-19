@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/messenger91/sql-tui/internal/db"
+	"github.com/messenger91/sql-tui/internal/result"
 )
 
 func TestPendingEdits(t *testing.T) {
@@ -100,5 +101,31 @@ func TestParseCellValue(t *testing.T) {
 				t.Fatalf("value = %#v, want %#v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestPendingRemapAfterSort(t *testing.T) {
+	pending := NewPending()
+	pending.SetCell(0, "name", CellEdit{Value: "edited"})
+	pending.SetRowOp(1, RowDelete)
+	pending.EnsureSnapshot(2, []result.ColumnValue{{Column: "id", Value: int64(3)}})
+
+	// Sorting moved old rows 0→2, 1→0, 2→1.
+	pending.Remap([]int{2, 0, 1})
+
+	if _, ok := pending.Cell(0, "name"); ok {
+		t.Fatal("stale row 0 cell survived the remap")
+	}
+	if edit, ok := pending.Cell(2, "name"); !ok || edit.Value != "edited" {
+		t.Fatalf("remapped cell = %+v ok=%v", edit, ok)
+	}
+	if got := pending.RowOp(0); got != RowDelete {
+		t.Fatalf("remapped row op = %q", got)
+	}
+	if _, ok := pending.Snapshots[1]; !ok {
+		t.Fatalf("remapped snapshot missing: %+v", pending.Snapshots)
+	}
+	if got := pending.Count(); got != 2 {
+		t.Fatalf("count = %d", got)
 	}
 }

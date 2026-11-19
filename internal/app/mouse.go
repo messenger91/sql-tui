@@ -3,6 +3,8 @@ package app
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/messenger91/sql-tui/internal/result"
 )
 
 // handleMouse implements click-to-focus, tab-bar clicks, and the "+ new tab"
@@ -19,6 +21,18 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	lay := m.layout()
 	rightStart := lay.workspaceW
 	if msg.X >= rightStart {
+		// Results header: clicking a column title sorts by it.
+		if msg.Y == lay.queryH+2 {
+			if s := m.activeSession(); s != nil && s.Results.Format() == result.FormatTable {
+				if name, ok := s.Results.ColumnAt(msg.X - rightStart - 2); ok {
+					m.focus = FocusResult
+					m.syncFocus()
+					s.Results.SelectColumn(name)
+					m.sortResultsByColumn(s, name)
+					return m, nil
+				}
+			}
+		}
 		// Query/results column. Rows: 0 border, 1 title, 2 tab bar, 3+ editor.
 		if msg.Y == 2 && m.activeSession() != nil {
 			if index, onPlus, ok := m.tabAt(msg.X - rightStart - 2); ok {

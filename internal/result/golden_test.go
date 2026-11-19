@@ -65,4 +65,10 @@ func TestGoldenResultViews(t *testing.T) {
 
 	m = New()
 	checkGolden(t, "no_result_view", ansi.Strip(m.View()))
+
+	sorted := New()
+	sorted.SetSize(50, 10)
+	sorted.SetResult(goldenResult())
+	sorted.SortColumn("name")
+	checkGolden(t, "table_sorted_view", ansi.Strip(sorted.View()))
 }

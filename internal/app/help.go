@@ -37,6 +37,7 @@ func helpText() string {
 		"",
 		"results",
 		"  ↑ / ↓ / h / l     navigate cells",
+		"  s / click header  sort column (again to flip)",
 		"  v                 table → CSV → JSON",
 		"  ctrl+e            export",
 		"  e / ctrl+n / m    edit cell / NULL / row menu",

@@ -80,6 +80,9 @@ func (m *Model) virtualWidths() []int {
 	}
 	visible := m.visibleColumns()
 	natural := make([]int, len(visible))
+	for position, index := range visible {
+		natural[position] = ansi.StringWidth(m.result.Columns[index] + m.sortIndicator(index))
+	}
 	sample := min(virtualSampleRows, len(m.result.Rows))
 	for rowIndex := 0; rowIndex < sample; rowIndex++ {
 		row := m.pendingRowStrings(rowIndex)
@@ -95,6 +98,7 @@ func (m *Model) virtualWidths() []int {
 	}
 	widths := fitWidths(natural, m.width)
 	m.widthsCache = widths
+	m.columnWidths = widths
 	return widths
 }
 
@@ -171,7 +175,7 @@ func (m Model) virtualView() string {
 	header := make([]string, len(visible))
 	separator := make([]string, len(visible))
 	for position, index := range visible {
-		title := ansi.Truncate(m.result.Columns[index], max(widths[position], 1), "…")
+		title := ansi.Truncate(m.result.Columns[index]+m.sortIndicator(index), max(widths[position], 1), "…")
 		header[position] = virtualHeaderStyle.Render(padCell(title, widths[position]))
 		separator[position] = strings.Repeat("─", widths[position]+2)
 	}
