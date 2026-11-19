@@ -10,8 +10,12 @@ import (
 )
 
 func main() {
-	if _, err := tea.NewProgram(app.New()).Run(); err != nil {
+	model := app.New()
+	if _, err := tea.NewProgram(model).Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "sql-tui: %v\n", err)
 		os.Exit(1)
+	}
+	if err := model.Close(); err != nil {
+		fmt.Fprintf(os.Stderr, "sql-tui: close databases: %v\n", err)
 	}
 }

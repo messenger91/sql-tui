@@ -2,7 +2,7 @@
 
 ## Current state
 
-Completed: §0–§3 — bootstrap, `internal/db` (full SQLite; MySQL/Postgres connect only), and the root TUI shell (`internal/app`, `internal/styles`). Workspace/query/result panes are static placeholders; add/select/execute behavior starts at M2 (§4–§6). MySQL/Postgres schema introspection returns `ErrUnsupportedSchema` until M5. `TODO.md` is authoritative for what is implemented.
+Completed: §0–§4 — bootstrap, `internal/db` (full SQLite; MySQL/Postgres connect only), the root TUI shell, and the workspace pane (add/edit/delete/activate connections, persisted JSON). M2 is in progress: the query editor (§5) and table results (§6.1) are still placeholders. MySQL/Postgres schema introspection returns `ErrUnsupportedSchema` until M5. `TODO.md` is authoritative for what is implemented.
 
 ## Source of truth
 
@@ -39,6 +39,14 @@ These are easy to violate when writing the first implementation:
 - **Inline editing is gated.** It is enabled only when the connection has `ReadOnly == false` *and* the result maps to a single table with a detectable PK/unique key. Pending edits are applied in one transaction with rollback and `RowsAffected == 1` checks; never write immediately on a cell edit.
 - **Goroutine hygiene is testable.** Cancellation must use `context`, runners must be tracked and drained on quit (`CloseAll`) and covered by `go test -race` plus `go.uber.org/goleak` in the session package.
 - **Drivers are a registry, not ad-hoc imports.** `internal/db` owns a driver switch/registry exposing `Connect`, `Execute`, `LoadSchema`, and a `Dialect` value used by §12 DML generation.
+
+## Workspace gotchas
+
+- `connections.json` is `{"connections":[...]}` written atomically with 0600. A missing `readOnly` field loads as `true`; keep that default when touching the store.
+- The workspace owns its own dialogs (add/edit form, delete confirm, connect error). It exposes them via `Modal()` and reports `CapturesInput()`, which the root model checks **before** global `tab`/help handling. Add new modal keys there, not in `app`.
+- Activation is message-based: workspace emits `ActivatedMsg`; the root model focuses the query pane, calls `workspace.SetActive`, and starts an async `db.LoadSchema`. Editing the active connection re-emits `ActivatedMsg` so the schema is reloaded.
+- DSNs are masked in the list (`maskDSN`), but the form and the on-disk JSON keep them plaintext.
+- `main` must call `model.Close()` after `tea.NewProgram(...).Run()`; the manager is a pointer inside a copied model, so closing there releases all handles.
 
 ## App shell gotchas
 

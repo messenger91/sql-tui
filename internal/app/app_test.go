@@ -1,17 +1,28 @@
 package app
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/messenger91/sql-tui/internal/db"
+	"github.com/messenger91/sql-tui/internal/workspace"
 )
+
+func newTestModel(t *testing.T) Model {
+	t.Helper()
+	return NewWithConfig(Config{
+		ConnectionsPath: filepath.Join(t.TempDir(), "connections.json"),
+	})
+}
 
 func newSized(t *testing.T, width, height int) Model {
 	t.Helper()
-	updated, _ := New().Update(tea.WindowSizeMsg{Width: width, Height: height})
+	updated, _ := newTestModel(t).Update(tea.WindowSizeMsg{Width: width, Height: height})
 	return updated.(Model)
 }
 
@@ -168,5 +179,57 @@ func TestTinyTerminalDoesNotPanic(t *testing.T) {
 	m := newSized(t, 20, 6)
 	if view := m.View(); view == "" {
 		t.Fatal("empty view at tiny size")
+	}
+}
+
+func TestActivationFocusesQueryAndLoadsSchema(t *testing.T) {
+	m := newSized(t, 80, 24)
+	connection := db.Connection{
+		ID: "c1", Name: "local", Driver: db.DriverSQLite, DSN: ":memory:", ReadOnly: true,
+	}
+
+	updated, cmd := m.Update(workspace.ActivatedMsg{Connection: connection})
+	m = updated.(Model)
+
+	if m.focus != FocusQuery {
+		t.Fatalf("focus = %v, want query", m.focus)
+	}
+	if m.active == nil || m.active.ID != "c1" {
+		t.Fatalf("active = %+v", m.active)
+	}
+	if cmd == nil {
+		t.Fatal("activation did not schedule a schema load")
+	}
+}
+
+func TestSchemaResultOnlyAppliesToActiveConnection(t *testing.T) {
+	m := newSized(t, 80, 24)
+	connection := db.Connection{ID: "c1", Name: "local", Driver: db.DriverSQLite, DSN: ":memory:"}
+	updated, _ := m.Update(workspace.ActivatedMsg{Connection: connection})
+	m = updated.(Model)
+
+	updated, _ = m.Update(schemaLoadedMsg{ConnectionID: "c1", Tables: []db.TableMeta{{Name: "users"}}})
+	m = updated.(Model)
+	if len(m.schema) != 1 || m.schema[0].Name != "users" {
+		t.Fatalf("schema = %+v", m.schema)
+	}
+
+	updated, _ = m.Update(schemaLoadedMsg{ConnectionID: "stale", Tables: []db.TableMeta{{Name: "other"}}})
+	m = updated.(Model)
+	if len(m.schema) != 1 || m.schema[0].Name != "users" {
+		t.Fatalf("stale schema overwrote the active connection: %+v", m.schema)
+	}
+}
+
+func TestDeactivationClearsActiveConnection(t *testing.T) {
+	m := newSized(t, 80, 24)
+	connection := db.Connection{ID: "c1", Name: "local", Driver: db.DriverSQLite, DSN: ":memory:"}
+	updated, _ := m.Update(workspace.ActivatedMsg{Connection: connection})
+	m = updated.(Model)
+
+	updated, _ = m.Update(workspace.DeactivatedMsg{})
+	m = updated.(Model)
+	if m.active != nil || m.schema != nil {
+		t.Fatalf("active=%+v schema=%+v", m.active, m.schema)
 	}
 }

@@ -65,7 +65,7 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
   - Return stable, sorted results; tolerate permission errors (partial schema is OK).
   - SQLite path implemented and tested; MySQL/Postgres return `ErrUnsupportedSchema` until M5.
 - [x] Add connection lifecycle management: `CloseAll()` on app quit; per-connection `context` cancellation. (Implemented as `db.Manager` with Open/Get/Close/CloseAll; query contexts stay caller-owned.)
-- [ ] Store DSNs securely? MVP: plaintext in config file under `~/.config/sql-tui/connections.json`; note a future `keyring` option.
+- [x] Store DSNs securely? MVP: plaintext in config file under `~/.config/sql-tui/connections.json`; note a future `keyring` option. (Implemented plaintext with 0600 + atomic rename; `os.UserConfigDir()` honors `XDG_CONFIG_HOME`. Keyring remains future work.)
 - [x] Placeholder style: expose `Dialect` (`mysql` = `?`, `postgres` = `$n`, `sqlite` = `?`) for §12 DML generation. (`Dialect` also carries identifier quoting: backticks/MySQL, double quotes/Postgres+SQLite.)
 
 ---
@@ -88,17 +88,17 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 
 ## 4. Workspace window (connection list)
 
-- [ ] Use `bubbles/list` for the connection list:
+- [x] Use `bubbles/list` for the connection list:
   - Items implement `list.Item` with `Title()` (connection name) and `Description()` (driver + host/db).
   - Filtering enabled (`/` to filter by name).
-- [ ] **Add connection** flow:
+- [x] **Add connection** flow:
   - `a` opens a form overlay with `textinput` fields: name, driver (select), DSN.
   - Provide driver-specific DSN hints/placeholders.
   - `enter` validates and calls `db.Connect` via `tea.Cmd`; spinner while connecting.
   - On success, append to list and persist; on failure, show error dialog.
-- [ ] **Edit / delete** connection: `e` / `d` on selected item; confirm delete.
-- [ ] On `enter`/`space` on a connection: mark active, move focus to Query window, and **kick off `LoadSchema` asynchronously** (§10).
-- [ ] Persist connections to `~/.config/sql-tui/connections.json` (0600 perms); load on startup.
+- [x] **Edit / delete** connection: `e` / `d` on selected item; confirm delete.
+- [x] On `enter`/`space` on a connection: mark active, move focus to Query window, and **kick off `LoadSchema` asynchronously** (§10). (Schema cache proper arrives in §10.1; the app already stores the result and ignores stale responses.)
+- [x] Persist connections to `~/.config/sql-tui/connections.json` (0600 perms); load on startup.
 
 ---
 
