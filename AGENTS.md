@@ -40,6 +40,16 @@ These are easy to violate when writing the first implementation:
 - **Goroutine hygiene is testable.** Cancellation must use `context`, runners must be tracked and drained on quit (`CloseAll`) and covered by `go test -race` plus `go.uber.org/goleak` in the session package.
 - **Drivers are a registry, not ad-hoc imports.** `internal/db` owns a driver switch/registry exposing `Connect`, `Execute`, `LoadSchema`, and a `Dialect` value used by §12 DML generation.
 
+## Decided behavior (approved during planning)
+
+- `ctrl+c`: cancels the focused session's running query; quits only when nothing is running. A second `ctrl+c` always quits.
+- Multi-statement input: split on `;` with a string/comment-aware scanner and run statements sequentially; show the last result set plus an `N statements executed` status.
+- Tab navigation: `ctrl+right` / `ctrl+left` plus `alt+1..9` are primary. `ctrl+tab` is only accepted when the terminal actually reports it.
+- Settings: `~/.config/sql-tui/settings.json`, key `max_rows` (default 10000).
+- Config paths go through `os.UserConfigDir()` (honors `XDG_CONFIG_HOME`) with `~/.config/sql-tui` fallback, so tests can redirect with `t.Setenv`.
+- Golden tests: stdlib `testdata/*.golden` comparison with an `-update` flag; no golden library dependency.
+- `db.Execute`: call `QueryContext`; fall back to `ExecContext` on `driver.ErrSkip` or a driver "no result set" error; empty column sets count as exec results.
+
 ## Conventions
 
 - State/config files live under `~/.config/sql-tui/` (`connections.json` at 0600, `favorites.json`); DSNs are plaintext for now.
