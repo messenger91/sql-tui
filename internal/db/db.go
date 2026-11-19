@@ -25,10 +25,6 @@ const DefaultMaxRows = 10000
 // know how to open.
 var ErrUnsupportedDriver = errors.New("db: unsupported driver")
 
-// ErrUnsupportedSchema is returned by LoadSchema for drivers whose
-// introspection path has not been implemented yet.
-var ErrUnsupportedSchema = errors.New("db: schema introspection not implemented")
-
 // Driver identifies a supported SQL backend.
 type Driver string
 

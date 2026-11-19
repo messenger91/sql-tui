@@ -2,7 +2,7 @@
 
 ## Current state
 
-Completed: §0–§9 — bootstrap, `internal/db` (full SQLite; MySQL/Postgres connect only), root TUI shell, workspace pane, query editor, table/CSV/JSON result views, view toggle, and export to file or clipboard. **M3 is complete**, as is M4 (favorites, §7). Next: M5 multi-driver schema introspection. `TODO.md` is authoritative for what is implemented.
+Completed: §0–§9 — bootstrap, `internal/db` (SQLite, MySQL, and Postgres: connect, execute, schema), root TUI shell, workspace pane, query editor, table/CSV/JSON result views, view toggle, and export to file or clipboard. **M3, M4, and M5 are complete.** Next: §10 schema browser + autocomplete (M6). `TODO.md` is authoritative for what is implemented.
 
 ## Source of truth
 
@@ -27,7 +27,7 @@ Completed: §0–§9 — bootstrap, `internal/db` (full SQLite; MySQL/Postgres c
 
 - Single test: `go test -race -run TestName ./internal/db/`.
 - `staticcheck` and `golangci-lint` are not installed in this environment; `make lint` skips `staticcheck` with a notice.
-- Integration tests for MySQL/Postgres use the `//go:build integration` tag and require Docker Compose fixtures; plain `go test ./...` must not require them.
+- Integration tests: `make db-up` starts MySQL (`127.0.0.1:3307`, root/root) and Postgres (`127.0.0.1:5433`, postgres/postgres) via `docker-compose.yml`; `make test-integration` runs `go test -tags integration ./...`; `make db-down` removes them and volumes. Override DSNs with `MYSQL_TEST_DSN` / `POSTGRES_TEST_DSN`. Plain `go test ./...` must not require Docker.
 - Manual PTY smoke tests: run under `TERM=dumb` (e.g. `script -qec "./bin/sql-tui" /dev/null`). With a colour-capable `TERM`, termenv blocks waiting for an OSC background-colour reply that `script` never sends, so the app appears to hang before entering raw mode.
 
 ## Architecture invariants
@@ -99,7 +99,7 @@ These are easy to violate when writing the first implementation:
 - `Execute(ctx, handle, query, maxRows)` takes the row cap explicitly; `maxRows <= 0` means `DefaultMaxRows`. A successful `QueryContext` is **never** retried as `ExecContext` — retrying would double-run `INSERT`s. `ExecContext` is only used when the driver reports "no result set".
 - SQLite handles are capped at **one physical connection** so `:memory:` has one consistent database. Never run a query while still iterating another `*sql.Rows` on the same handle; `LoadSchema` deliberately closes the `sqlite_master` listing before issuing PRAGMAs.
 - `Connection{}` has `ReadOnly: false`; use `db.NewConnection(...)` when constructing a user connection so the read-only default applies. Persistence code must not unmarshal into a fresh `Connection` and lose that default.
-- `LoadSchema` returns partial results plus a joined error when only some objects fail. MySQL/Postgres introspection is not implemented yet.
+- `LoadSchema` returns partial results plus a joined error when only some objects fail. MySQL scopes to `DATABASE()`, Postgres to `current_schema()`; ordinals are normalized to 0-based. MySQL returns `[]byte` for VARCHAR values — `export.FormatValue` handles that, and tests normalizing driver values must too.
 
 ## Decided behavior (approved during planning)
 

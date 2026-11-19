@@ -1,6 +1,6 @@
 BIN := bin/sql-tui
 
-.PHONY: build run test test-race lint fmt clean
+.PHONY: build run test test-race test-integration lint fmt clean db-up db-down
 
 build:
 	go build -o $(BIN) ./cmd/sql-tui
@@ -14,6 +14,14 @@ test:
 test-race:
 	go test -race ./...
 
+test-integration:
+	go test -tags integration ./...
+
+db-up:
+	docker compose up -d --wait
+
+db-down:
+	docker compose down -v
 lint:
 	test -z "$$(gofmt -l .)"
 	go vet ./...

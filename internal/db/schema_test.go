@@ -129,13 +129,7 @@ func TestLoadSchemaSQLiteSkipsInternalTables(t *testing.T) {
 	}
 }
 
-func TestLoadSchemaUnsupportedDrivers(t *testing.T) {
-	if _, err := LoadSchema(context.Background(), nil, DriverMySQL); !errors.Is(err, ErrUnsupportedSchema) {
-		t.Fatalf("mysql: want ErrUnsupportedSchema, got %v", err)
-	}
-	if _, err := LoadSchema(context.Background(), nil, DriverPostgres); !errors.Is(err, ErrUnsupportedSchema) {
-		t.Fatalf("postgres: want ErrUnsupportedSchema, got %v", err)
-	}
+func TestLoadSchemaUnsupportedDriver(t *testing.T) {
 	if _, err := LoadSchema(context.Background(), nil, Driver("oracle")); !errors.Is(err, ErrUnsupportedDriver) {
 		t.Fatalf("unknown: want ErrUnsupportedDriver, got %v", err)
 	}

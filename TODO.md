@@ -59,11 +59,11 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
   - Handle both result-returning and non-result statements (`ExecContext` fallback when `QueryContext` returns no columns).
   - Guard against unbounded result sets (see §6.4).
   - Implemented as `Execute(ctx, db, sql, maxRows)`: a successful `QueryContext` is never retried as `ExecContext` (that would re-run INSERTs); `ExecContext` is used only when the query reports "no result set".
-- [ ] Implement `LoadSchema(ctx, db *sql.DB, driver Driver) ([]TableMeta, error)`:
-  - MySQL/Postgres: query `information_schema.tables` / `information_schema.columns` / `information_schema.key_column_usage` (scope to the current DB/schema).
+- [x] Implement `LoadSchema(ctx, db *sql.DB, driver Driver) ([]TableMeta, error)`:
+  - MySQL/Postgres: query `information_schema.tables` / `information_schema.columns` / `information_schema.key_column_usage` (scope to the current DB/schema). (MySQL scopes to `DATABASE()`; Postgres to `current_schema()`, with FKs from `pg_constraint` for correct composite mapping.)
   - SQLite: `sqlite_master` for tables/views + `PRAGMA table_info(<t>)` per table; `PRAGMA foreign_key_list(<t>)` for FKs.
   - Return stable, sorted results; tolerate permission errors (partial schema is OK).
-  - SQLite path implemented and tested; MySQL/Postgres return `ErrUnsupportedSchema` until M5.
+  - All three drivers implemented; ordinals normalized to 0-based.
 - [x] Add connection lifecycle management: `CloseAll()` on app quit; per-connection `context` cancellation. (Implemented as `db.Manager` with Open/Get/Close/CloseAll; query contexts stay caller-owned.)
 - [x] Store DSNs securely? MVP: plaintext in config file under `~/.config/sql-tui/connections.json`; note a future `keyring` option. (Implemented plaintext with 0600 + atomic rename; `os.UserConfigDir()` honors `XDG_CONFIG_HOME`. Keyring remains future work.)
 - [x] Placeholder style: expose `Dialect` (`mysql` = `?`, `postgres` = `$n`, `sqlite` = `?`) for §12 DML generation. (`Dialect` also carries identifier quoting: backticks/MySQL, double quotes/Postgres+SQLite.)
@@ -334,15 +334,15 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 
 ## 14. Testing & validation
 
-- [ ] Unit tests for `internal/db`:
+- [x] Unit tests for `internal/db`:
   - Use SQLite in-memory (`:memory:`) to test `Execute` with `SELECT`, `INSERT`, empty result, and `NULL` values.
-  - Test type formatting (`time.Time`, `[]byte`, `nil`).
+  - Test type formatting (`time.Time`, `[]byte`, `nil`). (Covered in `internal/export` formatting tests.)
   - Test `LoadSchema` against a SQLite fixture with tables, views, PKs, FKs, and a composite PK.
-- [ ] Unit tests for `internal/export`:
-  - CSV round-trip with commas/quotes/newlines.
+- [x] Unit tests for `internal/export`:
+  - CSV round-trip with commas/quotes/newlines. (Newlines are escaped before CSV encoding; quoting is covered.)
   - JSON shape and indentation.
 - [ ] Golden tests for `View()` output of each pane state (table/CSV/JSON, empty result), tab bar, autocomplete popup, DML preview.
-- [ ] **Cross-cutting integration tests** (`//go:build integration`): Docker Compose for MySQL + Postgres fixtures; exercise the happy path of each advanced feature per driver (schema load, cancellable long query via `SELECT pg_sleep`/`SLEEP`, inline edit apply).
+- [ ] **Cross-cutting integration tests** (`//go:build integration`): Docker Compose for MySQL + Postgres fixtures; exercise the happy path of each advanced feature per driver (schema load, cancellable long query via `SELECT pg_sleep`/`SLEEP`, inline edit apply). (Schema load + query path passes for MySQL/Postgres; long-query cancellation and inline-edit apply arrive with §11/§12.)
 - [ ] `go test -race ./...` must pass; goroutine leak check via `go.uber.org/goleak` in session package tests.
 - [ ] Manual smoke tests against all three drivers; verify clipboard works on the target platform (or errors clearly).
 - [ ] `go vet` + `staticcheck` clean.

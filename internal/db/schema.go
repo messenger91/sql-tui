@@ -50,11 +50,282 @@ func LoadSchema(ctx context.Context, handle *sql.DB, driver Driver) ([]TableMeta
 	switch driver {
 	case DriverSQLite:
 		return loadSQLiteSchema(ctx, handle)
-	case DriverMySQL, DriverPostgres:
-		return nil, fmt.Errorf("%w: %s", ErrUnsupportedSchema, driver)
+	case DriverMySQL:
+		return loadMySQLSchema(ctx, handle)
+	case DriverPostgres:
+		return loadPostgresSchema(ctx, handle)
 	default:
 		return nil, fmt.Errorf("%w: %q", ErrUnsupportedDriver, driver)
 	}
+}
+
+// schemaBuilder assembles introspection rows into TableMeta values.
+type schemaBuilder struct {
+	tables []TableMeta
+	index  map[string]int
+}
+
+func newSchemaBuilder() *schemaBuilder {
+	return &schemaBuilder{index: make(map[string]int)}
+}
+
+func (b *schemaBuilder) add(name string, kind TableKind, schema string) {
+	if _, ok := b.index[name]; ok {
+		return
+	}
+	b.index[name] = len(b.tables)
+	b.tables = append(b.tables, TableMeta{Schema: schema, Name: name, Kind: kind})
+}
+
+func (b *schemaBuilder) column(table string, column ColumnMeta) {
+	position, ok := b.index[table]
+	if !ok {
+		return
+	}
+	b.tables[position].Columns = append(b.tables[position].Columns, column)
+}
+
+func (b *schemaBuilder) foreignKey(table string, fk ForeignKey) {
+	position, ok := b.index[table]
+	if !ok {
+		return
+	}
+	b.tables[position].ForeignKeys = append(b.tables[position].ForeignKeys, fk)
+}
+
+func (b *schemaBuilder) finish() []TableMeta {
+	for i := range b.tables {
+		sort.Slice(b.tables[i].Columns, func(a, c int) bool {
+			return b.tables[i].Columns[a].Ordinal < b.tables[i].Columns[c].Ordinal
+		})
+		sort.Slice(b.tables[i].ForeignKeys, func(a, c int) bool {
+			if b.tables[i].ForeignKeys[a].Column != b.tables[i].ForeignKeys[c].Column {
+				return b.tables[i].ForeignKeys[a].Column < b.tables[i].ForeignKeys[c].Column
+			}
+			return b.tables[i].ForeignKeys[a].RefTable < b.tables[i].ForeignKeys[c].RefTable
+		})
+	}
+	return b.tables
+}
+
+func tableKind(raw string) TableKind {
+	if strings.EqualFold(raw, "VIEW") {
+		return TableKindView
+	}
+	return TableKindTable
+}
+
+func loadMySQLSchema(ctx context.Context, handle *sql.DB) ([]TableMeta, error) {
+	builder := newSchemaBuilder()
+	var errs []error
+
+	rows, err := handle.QueryContext(ctx, `
+		SELECT table_name, table_type, table_schema
+		FROM information_schema.tables
+		WHERE table_schema = DATABASE() AND table_type IN ('BASE TABLE', 'VIEW')
+		ORDER BY table_type, table_name`)
+	if err != nil {
+		return nil, fmt.Errorf("db: list mysql tables: %w", err)
+	}
+	for rows.Next() {
+		var name, kind, schema string
+		if err := rows.Scan(&name, &kind, &schema); err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("db: scan mysql table: %w", err)
+		}
+		builder.add(name, tableKind(kind), schema)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, fmt.Errorf("db: list mysql tables: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("db: close mysql tables: %w", err)
+	}
+
+	rows, err = handle.QueryContext(ctx, `
+		SELECT table_name, column_name, column_type, is_nullable, ordinal_position, column_key
+		FROM information_schema.columns
+		WHERE table_schema = DATABASE()
+		ORDER BY table_name, ordinal_position`)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("db: mysql columns: %w", err))
+	} else {
+		for rows.Next() {
+			var (
+				table, name, dataType, nullable, columnKey string
+				ordinal                                    int
+			)
+			if err := rows.Scan(&table, &name, &dataType, &nullable, &ordinal, &columnKey); err != nil {
+				errs = append(errs, fmt.Errorf("db: scan mysql column: %w", err))
+				break
+			}
+			builder.column(table, ColumnMeta{
+				Name:         name,
+				Type:         dataType,
+				Nullable:     strings.EqualFold(nullable, "YES"),
+				IsPrimaryKey: strings.EqualFold(columnKey, "PRI"),
+				Ordinal:      ordinal - 1,
+			})
+		}
+		if err := rows.Err(); err != nil {
+			errs = append(errs, fmt.Errorf("db: mysql columns: %w", err))
+		}
+		_ = rows.Close()
+	}
+
+	rows, err = handle.QueryContext(ctx, `
+		SELECT table_name, column_name, referenced_table_name, referenced_column_name
+		FROM information_schema.key_column_usage
+		WHERE table_schema = DATABASE() AND referenced_table_name IS NOT NULL
+		ORDER BY table_name, constraint_name, ordinal_position`)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("db: mysql foreign keys: %w", err))
+	} else {
+		for rows.Next() {
+			var table, column, refTable, refColumn string
+			if err := rows.Scan(&table, &column, &refTable, &refColumn); err != nil {
+				errs = append(errs, fmt.Errorf("db: scan mysql foreign key: %w", err))
+				break
+			}
+			builder.foreignKey(table, ForeignKey{
+				Column:    column,
+				RefTable:  refTable,
+				RefColumn: refColumn,
+			})
+		}
+		if err := rows.Err(); err != nil {
+			errs = append(errs, fmt.Errorf("db: mysql foreign keys: %w", err))
+		}
+		_ = rows.Close()
+	}
+
+	return builder.finish(), errors.Join(errs...)
+}
+
+func loadPostgresSchema(ctx context.Context, handle *sql.DB) ([]TableMeta, error) {
+	builder := newSchemaBuilder()
+	var errs []error
+
+	rows, err := handle.QueryContext(ctx, `
+		SELECT table_name, table_type, table_schema
+		FROM information_schema.tables
+		WHERE table_schema = current_schema() AND table_type IN ('BASE TABLE', 'VIEW')
+		ORDER BY table_type, table_name`)
+	if err != nil {
+		return nil, fmt.Errorf("db: list postgres tables: %w", err)
+	}
+	for rows.Next() {
+		var name, kind, schema string
+		if err := rows.Scan(&name, &kind, &schema); err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("db: scan postgres table: %w", err)
+		}
+		builder.add(name, tableKind(kind), schema)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, fmt.Errorf("db: list postgres tables: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("db: close postgres tables: %w", err)
+	}
+
+	rows, err = handle.QueryContext(ctx, `
+		SELECT table_name, column_name, data_type, is_nullable, ordinal_position
+		FROM information_schema.columns
+		WHERE table_schema = current_schema()
+		ORDER BY table_name, ordinal_position`)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("db: postgres columns: %w", err))
+	} else {
+		for rows.Next() {
+			var (
+				table, name, dataType, nullable string
+				ordinal                         int
+			)
+			if err := rows.Scan(&table, &name, &dataType, &nullable, &ordinal); err != nil {
+				errs = append(errs, fmt.Errorf("db: scan postgres column: %w", err))
+				break
+			}
+			builder.column(table, ColumnMeta{
+				Name:     name,
+				Type:     dataType,
+				Nullable: strings.EqualFold(nullable, "YES"),
+				Ordinal:  ordinal - 1,
+			})
+		}
+		if err := rows.Err(); err != nil {
+			errs = append(errs, fmt.Errorf("db: postgres columns: %w", err))
+		}
+		_ = rows.Close()
+	}
+
+	rows, err = handle.QueryContext(ctx, `
+		SELECT tc.table_name, kcu.column_name
+		FROM information_schema.table_constraints tc
+		JOIN information_schema.key_column_usage kcu
+		  ON kcu.constraint_name = tc.constraint_name
+		 AND kcu.constraint_schema = tc.constraint_schema
+		WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema = current_schema()`)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("db: postgres primary keys: %w", err))
+	} else {
+		for rows.Next() {
+			var table, column string
+			if err := rows.Scan(&table, &column); err != nil {
+				errs = append(errs, fmt.Errorf("db: scan postgres primary key: %w", err))
+				break
+			}
+			position, ok := builder.index[table]
+			if !ok {
+				continue
+			}
+			for i := range builder.tables[position].Columns {
+				if builder.tables[position].Columns[i].Name == column {
+					builder.tables[position].Columns[i].IsPrimaryKey = true
+				}
+			}
+		}
+		if err := rows.Err(); err != nil {
+			errs = append(errs, fmt.Errorf("db: postgres primary keys: %w", err))
+		}
+		_ = rows.Close()
+	}
+
+	rows, err = handle.QueryContext(ctx, `
+		SELECT cls.relname, att.attname, ref_cls.relname, ref_att.attname
+		FROM pg_constraint c
+		JOIN pg_class cls ON cls.oid = c.conrelid
+		JOIN pg_namespace n ON n.oid = cls.relnamespace
+		JOIN LATERAL unnest(c.conkey, c.confkey) WITH ORDINALITY AS cols(attnum, refattnum, ord) ON true
+		JOIN pg_attribute att ON att.attrelid = c.conrelid AND att.attnum = cols.attnum
+		JOIN pg_class ref_cls ON ref_cls.oid = c.confrelid
+		JOIN pg_attribute ref_att ON ref_att.attrelid = c.confrelid AND ref_att.attnum = cols.refattnum
+		WHERE c.contype = 'f' AND n.nspname = current_schema()
+		ORDER BY cls.relname, cols.ord`)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("db: postgres foreign keys: %w", err))
+	} else {
+		for rows.Next() {
+			var table, column, refTable, refColumn string
+			if err := rows.Scan(&table, &column, &refTable, &refColumn); err != nil {
+				errs = append(errs, fmt.Errorf("db: scan postgres foreign key: %w", err))
+				break
+			}
+			builder.foreignKey(table, ForeignKey{
+				Column:    column,
+				RefTable:  refTable,
+				RefColumn: refColumn,
+			})
+		}
+		if err := rows.Err(); err != nil {
+			errs = append(errs, fmt.Errorf("db: postgres foreign keys: %w", err))
+		}
+		_ = rows.Close()
+	}
+
+	return builder.finish(), errors.Join(errs...)
 }
 
 func loadSQLiteSchema(ctx context.Context, handle *sql.DB) ([]TableMeta, error) {
