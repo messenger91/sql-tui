@@ -149,13 +149,13 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 
 ## 7. Favorites (named SQL scripts)
 
-- [ ] Favorite model: `{ ID, Name, SQL, ConnectionID?, CreatedAt }`.
-- [ ] Store favorites in `~/.config/sql-tui/favorites.json`.
-- [ ] **Save flow**: from Query window `ctrl+s` → overlay with `textinput` for name → save current editor content.
-- [ ] **Browse flow**: `ctrl+f` opens a favorites list overlay (reuse `bubbles/list`); `enter` loads SQL into the query editor.
-- [ ] **Update/overwrite**: if a favorite with the same name exists, prompt to overwrite.
-- [ ] **Delete**: `d` in favorites list, confirm.
-- [ ] Optional: allow associating a favorite with a connection and auto-select it on load.
+- [x] Favorite model: `{ ID, Name, SQL, ConnectionID?, CreatedAt }`.
+- [x] Store favorites in `~/.config/sql-tui/favorites.json`.
+- [x] **Save flow**: from Query window `ctrl+s` → overlay with `textinput` for name → save current editor content.
+- [x] **Browse flow**: `ctrl+f` opens a favorites list overlay (reuse `bubbles/list`); `enter` loads SQL into the query editor.
+- [x] **Update/overwrite**: if a favorite with the same name exists, prompt to overwrite.
+- [x] **Delete**: `d` in favorites list, confirm.
+- [ ] Optional: allow associating a favorite with a connection and auto-select it on load. (Field exists in the model; UI/auto-select deferred.)
 
 ---
 

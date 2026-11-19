@@ -18,8 +18,10 @@ import (
 
 func newTestModel(t *testing.T) Model {
 	t.Helper()
+	dir := t.TempDir()
 	return NewWithConfig(Config{
-		ConnectionsPath: filepath.Join(t.TempDir(), "connections.json"),
+		ConnectionsPath: filepath.Join(dir, "connections.json"),
+		FavoritesPath:   filepath.Join(dir, "favorites.json"),
 	})
 }
 
@@ -395,5 +397,15 @@ func TestViewToggleIgnoredOutsideResults(t *testing.T) {
 	m = updated.(Model)
 	if m.results.Format() != before {
 		t.Fatalf("format changed to %q outside results", m.results.Format())
+	}
+}
+
+func TestViewKeyIsTypedInEditor(t *testing.T) {
+	m := newSized(t, 80, 24)
+	m.focus = FocusQuery
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+	m = updated.(Model)
+	if got := m.query.SQL(); got != "v" {
+		t.Fatalf("editor = %q, want the v keystroke", got)
 	}
 }

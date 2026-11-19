@@ -18,6 +18,7 @@ import (
 
 	"github.com/messenger91/sql-tui/internal/db"
 	"github.com/messenger91/sql-tui/internal/export"
+	"github.com/messenger91/sql-tui/internal/favorites"
 	"github.com/messenger91/sql-tui/internal/query"
 	"github.com/messenger91/sql-tui/internal/result"
 	"github.com/messenger91/sql-tui/internal/styles"
@@ -42,6 +43,7 @@ type modalBox struct {
 // value keeps persistence in memory and uses the system clipboard.
 type Config struct {
 	ConnectionsPath string
+	FavoritesPath   string
 	Clipboard       export.Clipboard
 }
 
@@ -54,6 +56,7 @@ type Model struct {
 	workspace workspace.Model
 	query     query.Model
 	results   result.Model
+	favorites favorites.Model
 	clipboard export.Clipboard
 
 	focus         Focus
@@ -80,6 +83,7 @@ func NewWithConfig(cfg Config) Model {
 	h.Width = defaultWidth
 	manager := db.NewManager()
 	store := workspace.NewStore(cfg.ConnectionsPath)
+	favoriteStore := favorites.NewStore(cfg.FavoritesPath)
 	clipboard := cfg.Clipboard
 	if clipboard == nil {
 		clipboard = export.SystemClipboard{}
@@ -92,6 +96,7 @@ func NewWithConfig(cfg Config) Model {
 		workspace: workspace.New(store, manager),
 		query:     query.New(),
 		results:   result.New(),
+		favorites: favorites.New(favoriteStore),
 		clipboard: clipboard,
 		focus:     FocusWorkspace,
 	}
@@ -102,12 +107,16 @@ func defaultConfig() Config {
 	if err != nil {
 		return Config{}
 	}
-	return Config{ConnectionsPath: filepath.Join(dir, "sql-tui", "connections.json")}
+	base := filepath.Join(dir, "sql-tui")
+	return Config{
+		ConnectionsPath: filepath.Join(base, "connections.json"),
+		FavoritesPath:   filepath.Join(base, "favorites.json"),
+	}
 }
 
 // Init implements tea.Model.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.workspace.Init(), m.query.Init())
+	return tea.Batch(m.workspace.Init(), m.query.Init(), m.favorites.Init())
 }
 
 // Close releases every open database handle. Call it after the program exits.
@@ -158,6 +167,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.query.ReportError(msg.Err)
 		m.lastQueryErr = msg.Err
 		return m, nil
+	case favorites.LoadMsg:
+		m.query.SetSQL(msg.SQL)
+		m.focus = FocusQuery
+		m.syncFocus()
+		cmd := m.setNotice("loaded favorite: " + msg.Name)
+		return m, cmd
 	case exportDoneMsg:
 		if msg.Err != nil {
 			m.openModal("Export failed", msg.Err.Error())
@@ -179,9 +194,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	default:
 		workspaceModel, workspaceCmd := m.workspace.Update(msg)
 		queryModel, queryCmd := m.query.Update(msg)
+		favoritesModel, favoritesCmd := m.favorites.Update(msg)
 		m.workspace = workspaceModel
 		m.query = queryModel
-		return m, tea.Batch(workspaceCmd, queryCmd)
+		m.favorites = favoritesModel
+		return m, tea.Batch(workspaceCmd, queryCmd, favoritesCmd)
 	}
 }
 
@@ -299,6 +316,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.favorites.CapturesInput() {
+		var cmd tea.Cmd
+		m.favorites, cmd = m.favorites.Update(msg)
+		return m, cmd
+	}
 	if m.workspace.CapturesInput() {
 		var cmd tea.Cmd
 		m.workspace, cmd = m.workspace.Update(msg)
@@ -323,16 +345,20 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.help.ShowAll = !m.help.ShowAll
 		m.resize()
 		return m, nil
-	case key.Matches(msg, m.keys.ViewFormat):
-		if m.focus != FocusResult {
-			return m, nil
-		}
+	case key.Matches(msg, m.keys.ViewFormat) && m.focus == FocusResult:
 		m.results.CycleFormat()
 		return m, nil
-	case key.Matches(msg, m.keys.Export):
-		if m.focus != FocusResult {
-			return m, nil
+	case key.Matches(msg, m.keys.SaveFav) && m.focus == FocusQuery:
+		if strings.TrimSpace(m.query.SQL()) == "" {
+			cmd := m.setNotice("nothing to save")
+			return m, cmd
 		}
+		m.favorites.OpenSave(m.query.SQL())
+		return m, nil
+	case key.Matches(msg, m.keys.BrowseFav) && m.focus == FocusQuery:
+		m.favorites.OpenBrowse()
+		return m, nil
+	case key.Matches(msg, m.keys.Export) && m.focus == FocusResult:
 		if _, ok := m.results.Result(); !ok {
 			cmd := m.setNotice("no results to export")
 			return m, cmd
@@ -423,6 +449,8 @@ func (m Model) View() string {
 		view = m.renderModal(view, lay, modalBox{Title: title, Body: body})
 	} else if m.export != nil {
 		view = m.renderModal(view, lay, modalBox{Title: "Export results", Body: m.export.view()})
+	} else if title, body, ok := m.favorites.Modal(); ok {
+		view = m.renderModal(view, lay, modalBox{Title: title, Body: body})
 	} else if m.modal != nil {
 		view = m.renderModal(view, lay, *m.modal)
 	}
@@ -452,6 +480,7 @@ func (m *Model) resize() {
 	m.workspace.SetSize(max(lay.workspaceW-4, 1), max(lay.bodyH-3, 1))
 	m.query.SetSize(max(lay.rightW-4, 1), max(lay.queryH-3, 1))
 	m.results.SetSize(max(lay.rightW-4, 1), max(lay.resultH-3, 1))
+	m.favorites.SetSize(lay.width, lay.height)
 	if m.active != nil {
 		m.workspace.SetActive(m.active.ID)
 	}

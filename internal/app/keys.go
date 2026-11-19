@@ -10,6 +10,8 @@ type keyMap struct {
 	Close      key.Binding
 	Export     key.Binding
 	ViewFormat key.Binding
+	SaveFav    key.Binding
+	BrowseFav  key.Binding
 }
 
 func defaultKeyMap() keyMap {
@@ -42,6 +44,14 @@ func defaultKeyMap() keyMap {
 			key.WithKeys("v"),
 			key.WithHelp("v", "view"),
 		),
+		SaveFav: key.NewBinding(
+			key.WithKeys("ctrl+s"),
+			key.WithHelp("ctrl+s", "save favorite"),
+		),
+		BrowseFav: key.NewBinding(
+			key.WithKeys("ctrl+f"),
+			key.WithHelp("ctrl+f", "favorites"),
+		),
 	}
 }
 
@@ -55,6 +65,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Cycle, k.CyclePrev},
 		{k.Export, k.ViewFormat},
+		{k.SaveFav, k.BrowseFav},
 		{k.Help, k.Close},
 		{k.Quit},
 	}

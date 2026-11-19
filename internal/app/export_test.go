@@ -28,8 +28,10 @@ func (f *fakeClipboard) WriteAll(text string) error {
 
 func newExportModel(t *testing.T, clipboard export.Clipboard) Model {
 	t.Helper()
+	dir := t.TempDir()
 	m := NewWithConfig(Config{
-		ConnectionsPath: filepath.Join(t.TempDir(), "connections.json"),
+		ConnectionsPath: filepath.Join(dir, "connections.json"),
+		FavoritesPath:   filepath.Join(dir, "favorites.json"),
 		Clipboard:       clipboard,
 	})
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})

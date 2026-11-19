@@ -2,7 +2,7 @@
 
 ## Current state
 
-Completed: §0–§9 — bootstrap, `internal/db` (full SQLite; MySQL/Postgres connect only), root TUI shell, workspace pane, query editor, table/CSV/JSON result views, view toggle, and export to file or clipboard. **M3 is complete.** Next: M4 favorites (§7), then M5 multi-driver schema introspection. `TODO.md` is authoritative for what is implemented.
+Completed: §0–§9 — bootstrap, `internal/db` (full SQLite; MySQL/Postgres connect only), root TUI shell, workspace pane, query editor, table/CSV/JSON result views, view toggle, and export to file or clipboard. **M3 is complete**, as is M4 (favorites, §7). Next: M5 multi-driver schema introspection. `TODO.md` is authoritative for what is implemented.
 
 ## Source of truth
 
@@ -48,6 +48,14 @@ These are easy to violate when writing the first implementation:
 - Activation is message-based: workspace emits `ActivatedMsg`; the root model focuses the query pane, calls `workspace.ActivationSucceeded` (which also clears the `connecting…` spinner), and starts an async `db.LoadSchema`. Editing the active connection re-emits `ActivatedMsg` so the schema is reloaded. If a new activation message is ever added, clear `busy` there too or the spinner runs forever.
 - DSNs are masked in the list (`maskDSN`), but the form and the on-disk JSON keep them plaintext.
 - `main` must call `model.Close()` after `tea.NewProgram(...).Run()`; the manager is a pointer inside a copied model, so closing there releases all handles.
+
+## Favorites gotchas
+
+- `favorites.json` is `{"favorites":[...]}` written atomically with 0600, mirroring `connections.json`. `Config.FavoritesPath` is empty in zero-value configs; the store then keeps data in memory.
+- `ctrl+s`/`ctrl+f` only act when the **query** pane is focused. Loading emits `favorites.LoadMsg`, which the root model turns into `query.SetSQL` plus a notice.
+- The save form stays alive under the overwrite prompt: after `n` the user returns to the form. Modal/handle ordering must therefore check `overwrite` and `confirm` **before** `save` (both in `Modal()` and `handleKey`).
+- While the favorites list is filtering, all keys are delegated to `bubbles/list`, so `d` types into the filter rather than deleting.
+- Shortcut `case` branches in `app.handleKey` must include their focus guard **in the case condition** (e.g. `key.Matches(...) && m.focus == FocusResult`). A guard inside the branch returns early and swallows ordinary characters such as `v` while typing in the editor.
 
 ## Export gotchas
 

@@ -64,6 +64,15 @@ func (m Model) Init() tea.Cmd {
 	return textarea.Blink
 }
 
+// SQL returns the current editor contents.
+func (m Model) SQL() string { return m.editor.Value() }
+
+// SetSQL replaces the editor contents and focuses it.
+func (m *Model) SetSQL(sql string) {
+	m.editor.SetValue(sql)
+	m.editor.Focus()
+}
+
 // SetSize resizes the editor, reserving one row for the status line.
 func (m *Model) SetSize(width, height int) {
 	m.width = max(width, 10)
