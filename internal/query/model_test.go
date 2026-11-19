@@ -71,8 +71,7 @@ func TestExecuteEmitsRequestAndBlocksReentry(t *testing.T) {
 		t.Fatalf("request = %+v", requested)
 	}
 
-	updated, second := m.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
-	m = updated
+	_, second := m.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
 	if second != nil {
 		t.Fatal("second ctrl+r while running emitted a command")
 	}

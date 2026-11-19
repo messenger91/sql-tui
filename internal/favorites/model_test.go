@@ -139,7 +139,7 @@ func TestOverwritePrompt(t *testing.T) {
 		t.Fatal("cancel did not return to the save form")
 	}
 
-	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated
 	if m.overwrite == nil {
 		t.Fatal("prompt missing on retry")

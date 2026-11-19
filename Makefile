@@ -25,7 +25,9 @@ db-down:
 lint:
 	test -z "$$(gofmt -l .)"
 	go vet ./...
-	@command -v staticcheck >/dev/null && staticcheck ./... || echo "staticcheck not installed; skipped"
+	@if command -v staticcheck >/dev/null 2>&1; then staticcheck ./...; \
+	elif [ -x "$$(go env GOPATH)/bin/staticcheck" ]; then "$$(go env GOPATH)/bin/staticcheck" ./...; \
+	else echo "staticcheck not installed; skipped"; fi
 
 fmt:
 	gofmt -w .

@@ -190,6 +190,20 @@ func TestTinyTerminalDoesNotPanic(t *testing.T) {
 	}
 }
 
+func TestLongModalStaysWithinScreen(t *testing.T) {
+	m := newSized(t, 80, 24)
+	m.openModal("Long error", strings.Repeat("statement failed because of a very long reason\n", 60))
+	lines := strings.Split(ansi.Strip(m.View()), "\n")
+	if len(lines) != 24 {
+		t.Fatalf("modal screen has %d lines", len(lines))
+	}
+	for i, line := range lines {
+		if width := ansi.StringWidth(line); width > 80 {
+			t.Fatalf("line %d width %d > 80", i, width)
+		}
+	}
+}
+
 func TestActivationFocusesQueryAndLoadsSchema(t *testing.T) {
 	m := newSized(t, 80, 24)
 	connection := db.Connection{

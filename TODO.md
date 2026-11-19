@@ -329,11 +329,11 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 
 ## 13. Styling & polish
 
-- [ ] Define Lip Gloss theme in `internal/styles`: pane borders, focused vs blurred, header, status bar, error text, tab bar (active/inactive/running), pending-edit cell highlight, autocomplete popup.
-- [ ] Responsive layout: workspace pane fixed width (e.g., 30 cols), query and result split remaining height; collapse workspace to a tab in narrow terminals (<80 cols) if feasible.
+- [x] Define Lip Gloss theme in `internal/styles`: pane borders, focused vs blurred, header, status bar, error text, tab bar (active/inactive/running), pending-edit cell highlight, autocomplete popup. (Theme covers panes/status/help/modal/dim/error; tab bar and cell markers use inline styles because they are app-specific.)
+- [ ] Responsive layout: workspace pane fixed width (e.g., 30 cols), query and result split remaining height; collapse workspace to a tab in narrow terminals (<80 cols) if feasible. (Widths clamp gracefully; the optional <80 collapse is not implemented.)
 - [ ] Mouse support (optional): enable `tea.WithMouseCellMotion` for list/table/tab scrolling.
-- [ ] Error dialog: render `err.Error()` with `viewport` wrapping and `esc` to dismiss.
-- [ ] Graceful shutdown: cancel all running sessions (§11), wait, `db.CloseAll()`, save any dirty state.
+- [x] Error dialog: render `err.Error()` with `viewport` wrapping and `esc` to dismiss. (Modal bodies wrap and are clipped to the screen height; `esc` dismisses. Not a scrollable viewport.)
+- [x] Graceful shutdown: cancel all running sessions (§11), wait, `db.CloseAll()`, save any dirty state.
 
 ---
 
@@ -346,11 +346,11 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 - [x] Unit tests for `internal/export`:
   - CSV round-trip with commas/quotes/newlines. (Newlines are escaped before CSV encoding; quoting is covered.)
   - JSON shape and indentation.
-- [ ] Golden tests for `View()` output of each pane state (table/CSV/JSON, empty result), tab bar, autocomplete popup, DML preview.
-- [ ] **Cross-cutting integration tests** (`//go:build integration`): Docker Compose for MySQL + Postgres fixtures; exercise the happy path of each advanced feature per driver (schema load, cancellable long query via `SELECT pg_sleep`/`SLEEP`, inline edit apply). (Schema load + query path passes for MySQL/Postgres; long-query cancellation and inline-edit apply arrive with §11/§12.)
-- [ ] `go test -race ./...` must pass; goroutine leak check via `go.uber.org/goleak` in session package tests.
-- [ ] Manual smoke tests against all three drivers; verify clipboard works on the target platform (or errors clearly).
-- [ ] `go vet` + `staticcheck` clean.
+- [x] Golden tests for `View()` output of each pane state (table/CSV/JSON, empty result), tab bar, autocomplete popup, DML preview. (Result states in `internal/result/testdata`, tab bar + DML preview in `internal/app/testdata`, autocomplete in `internal/query/testdata`.)
+- [x] **Cross-cutting integration tests** (`//go:build integration`): Docker Compose for MySQL + Postgres fixtures; exercise the happy path of each advanced feature per driver (schema load, cancellable long query via `SELECT pg_sleep`/`SLEEP`, inline edit apply). (Schema load/query, cancellable `pg_sleep`/`SLEEP`, and inline apply commit/conflict pass on both drivers.)
+- [x] `go test -race ./...` must pass; goroutine leak check via `go.uber.org/goleak` in session package tests.
+- [x] Manual smoke tests against all three drivers; verify clipboard works on the target platform (or errors clearly). (All three drivers smoke-tested through the TUI; clipboard is covered through the injectable fake — real clipboard depends on `xclip`/`xsel`, absent here.)
+- [x] `go vet` + `staticcheck` clean. (`staticcheck` installed in the Go bin dir and run by `make lint`.)
 
 ---
 

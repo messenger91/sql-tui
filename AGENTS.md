@@ -2,7 +2,7 @@
 
 ## Current state
 
-Completed: §0–§9 — bootstrap, `internal/db` (SQLite, MySQL, and Postgres: connect, execute, schema), root TUI shell, workspace pane, query editor, table/CSV/JSON result views, view toggle, and export to file or clipboard. **M3, M4, and M5 are complete; §10, §11, and §12 are complete (M8 done).** Next: M9 (§13 polish + §14 full sweep). `TODO.md` is authoritative for what is implemented.
+Completed: all planned sections — bootstrap, `internal/db` (SQLite/MySQL/Postgres connect/execute/schema), root shell, workspace, query editor, result views/export, favorites, schema browser + autocomplete, multi-tab async streaming, and inline editing with transactional apply. **M9 is complete.** Remaining unchecked TODO items are explicitly optional or refinements (mouse, <80-column layout, in-place post-commit refresh, unique-index editing fallback). `TODO.md` is authoritative for details.
 
 ## Source of truth
 
@@ -26,9 +26,9 @@ Completed: §0–§9 — bootstrap, `internal/db` (SQLite, MySQL, and Postgres: 
 | `make fmt` | `gofmt -w .` |
 
 - Single test: `go test -race -run TestName ./internal/db/`.
-- `staticcheck` and `golangci-lint` are not installed in this environment; `make lint` skips `staticcheck` with a notice.
-- Integration tests: `make db-up` starts MySQL (`127.0.0.1:3307`, root/root) and Postgres (`127.0.0.1:5433`, postgres/postgres) via `docker-compose.yml`; `make test-integration` runs `go test -tags integration ./...`; `make db-down` removes them and volumes. Override DSNs with `MYSQL_TEST_DSN` / `POSTGRES_TEST_DSN`. Plain `go test ./...` must not require Docker.
-- Golden tests use stdlib `testdata/*.golden` comparison; regenerate with `go test ./internal/query -run TestGolden -update` or `go test ./internal/app -run TestGolden -update` (each package defines its own `-update` flag). The app golden set includes `tab_bar` and `dml_preview`.
+- `staticcheck` is installed in `$(go env GOPATH)/bin` (v0.8.2; it downloads a Go 1.26 toolchain for itself). `make lint` finds it even when that directory is not on `PATH`; findings must be fixed, not suppressed.
+- Integration tests: `make db-up` starts MySQL (`127.0.0.1:3307`, root/root) and Postgres (`127.0.0.1:5433`, postgres/postgres) via `docker-compose.yml`; `make test-integration` runs `go test -tags integration ./...`; `make db-down` removes them and volumes. Tests cover schema load, cancellable `pg_sleep`/`SLEEP` queries, and inline apply commit/conflict. Override DSNs with `MYSQL_TEST_DSN` / `POSTGRES_TEST_DSN`. Plain `go test ./...` must not require Docker.
+- Golden tests use stdlib `testdata/*.golden` comparison; regenerate with `go test ./internal/<pkg> -run TestGolden -update` (`query`, `app`, and `result` each define their own `-update` flag). Sets: autocomplete popup, tab bar + DML preview, and table/CSV/JSON/empty result states.
 - `go.uber.org/goleak` runs in `internal/session`'s `TestMain`; session/runner tests must leave no goroutines behind.
 - Manual PTY smoke tests: run under `TERM=dumb` (e.g. `script -qec "./bin/sql-tui" /dev/null`). With a colour-capable `TERM`, termenv blocks waiting for an OSC background-colour reply that `script` never sends, so the app appears to hang before entering raw mode.
 

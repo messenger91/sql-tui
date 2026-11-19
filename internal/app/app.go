@@ -868,10 +868,6 @@ func (m *Model) openModal(title, body string) {
 	m.modal = &modalBox{Title: title, Body: body}
 }
 
-func (m *Model) closeModal() {
-	m.modal = nil
-}
-
 // View implements tea.Model.
 func (m Model) View() string {
 	lay := m.layout()
@@ -1109,7 +1105,21 @@ func (m Model) renderModal(background string, lay layout, box modalBox) string {
 	boxWidth := min(56, max(lay.width-8, 8))
 	content := m.theme.ModalTitle.Render(box.Title) + "\n\n" + box.Body
 	rendered := m.theme.Modal.Width(boxWidth).Render(content)
+	// Long errors/args can wrap; keep the modal inside the screen.
+	rendered = limitLines(rendered, max(lay.height-2, 3))
 	return overlay(m.dimLines(background), rendered, lay.width)
+}
+
+// limitLines clips a rendered block to maxLines, appending an ellipsis marker
+// when content was dropped.
+func limitLines(block string, maxLines int) string {
+	lines := strings.Split(block, "\n")
+	if len(lines) <= maxLines {
+		return block
+	}
+	lines = lines[:maxLines]
+	lines[maxLines-1] = ansi.Truncate(lines[maxLines-1], 200, "…") + "…"
+	return strings.Join(lines, "\n")
 }
 
 func (m Model) dimLines(background string) string {

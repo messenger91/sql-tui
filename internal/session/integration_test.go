@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/messenger91/sql-tui/internal/db"
 	"github.com/messenger91/sql-tui/internal/schema"
@@ -131,6 +132,60 @@ func TestIntegrationApplyConflict(t *testing.T) {
 			outcome := plan.Apply(context.Background(), handle)
 			if !errors.Is(outcome.Err, ErrRowChanged) {
 				t.Fatalf("outcome = %+v", outcome)
+			}
+		})
+	}
+}
+
+func TestIntegrationLongQueryCancellation(t *testing.T) {
+	tests := []struct {
+		driver db.Driver
+		query  string
+	}{
+		{db.DriverPostgres, "SELECT pg_sleep(5)"},
+		{db.DriverMySQL, "SELECT SLEEP(5)"},
+	}
+	for _, tc := range tests {
+		t.Run(string(tc.driver), func(t *testing.T) {
+			dsn := integrationDSN("MYSQL_TEST_DSN", defaultMySQLDSN)
+			if tc.driver == db.DriverPostgres {
+				dsn = integrationDSN("POSTGRES_TEST_DSN", defaultPostgresDSN)
+			}
+			handle := openIntegration(t, tc.driver, dsn)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			events := make(chan Event, 16)
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				Run(ctx, handle, tc.query, 0, func(event Event) bool {
+					events <- event
+					return true
+				})
+			}()
+
+			time.AfterFunc(150*time.Millisecond, cancel)
+			deadline := time.After(5 * time.Second)
+			started := time.Now()
+			for {
+				select {
+				case event := <-events:
+					if event.Kind == EventCancelled {
+						if elapsed := time.Since(started); elapsed > 3*time.Second {
+							t.Fatalf("cancellation took %v", elapsed)
+						}
+						return
+					}
+					if event.Kind == EventError || event.Kind == EventDone {
+						t.Fatalf("unexpected terminal event: %+v", event)
+					}
+				case <-done:
+					t.Fatal("runner exited without a cancelled event")
+				case <-deadline:
+					t.Fatal("runner did not cancel in time")
+				}
 			}
 		})
 	}

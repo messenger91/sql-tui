@@ -153,9 +153,7 @@ func (m *Model) AppendRows(rows [][]any) {
 	}
 	oldCount := len(m.result.Rows)
 	atBottom := oldCount == 0 || m.table.Cursor() >= oldCount-1
-	for _, row := range rows {
-		m.result.Rows = append(m.result.Rows, row)
-	}
+	m.result.Rows = append(m.result.Rows, rows...)
 	m.result.RowCount = len(m.result.Rows)
 	m.rebuild()
 	if atBottom && len(m.result.Rows) > 0 {
