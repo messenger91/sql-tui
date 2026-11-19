@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -13,8 +14,10 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/messenger91/sql-tui/internal/db"
+	"github.com/messenger91/sql-tui/internal/query"
 	"github.com/messenger91/sql-tui/internal/styles"
 	"github.com/messenger91/sql-tui/internal/workspace"
 )
@@ -46,14 +49,17 @@ type Model struct {
 	keys      keyMap
 	manager   *db.Manager
 	workspace workspace.Model
+	query     query.Model
 
 	focus         Focus
 	width, height int
 	modal         *modalBox
 
-	active    *db.Connection
-	schema    []db.TableMeta
-	schemaErr error
+	active       *db.Connection
+	schema       []db.TableMeta
+	schemaErr    error
+	lastResult   *db.QueryResult
+	lastQueryErr error
 }
 
 // New returns the root model using the platform config directory.
@@ -73,6 +79,7 @@ func NewWithConfig(cfg Config) Model {
 		keys:      defaultKeyMap(),
 		manager:   manager,
 		workspace: workspace.New(store, manager),
+		query:     query.New(),
 		focus:     FocusWorkspace,
 	}
 }
@@ -87,7 +94,7 @@ func defaultConfig() Config {
 
 // Init implements tea.Model.
 func (m Model) Init() tea.Cmd {
-	return m.workspace.Init()
+	return tea.Batch(m.workspace.Init(), m.query.Init())
 }
 
 // Close releases every open database handle. Call it after the program exits.
@@ -123,12 +130,71 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.schema = msg.Tables
 		m.schemaErr = msg.Err
 		return m, nil
+	case query.ExecuteRequestedMsg:
+		return m.startQuery(msg.SQL)
+	case queryFinishedMsg:
+		m.query.ReportSuccess(msg.Statements, msg.Result)
+		result := msg.Result
+		m.lastResult = &result
+		m.lastQueryErr = nil
+		m.focus = FocusResult
+		return m, nil
+	case queryFailedMsg:
+		m.query.ReportError(msg.Err)
+		m.lastQueryErr = msg.Err
+		return m, nil
 	case sessionEventMsg:
 		return m.routeSessionEvent(msg)
 	default:
-		var cmd tea.Cmd
-		m.workspace, cmd = m.workspace.Update(msg)
-		return m, cmd
+		workspaceModel, workspaceCmd := m.workspace.Update(msg)
+		queryModel, queryCmd := m.query.Update(msg)
+		m.workspace = workspaceModel
+		m.query = queryModel
+		return m, tea.Batch(workspaceCmd, queryCmd)
+	}
+}
+
+type queryFinishedMsg struct {
+	Result     db.QueryResult
+	Statements int
+}
+
+type queryFailedMsg struct {
+	Err error
+}
+
+func (m Model) startQuery(sql string) (tea.Model, tea.Cmd) {
+	if m.active == nil {
+		m.query.SetStatus("no connection selected")
+		return m, nil
+	}
+	handle, ok := m.manager.Get(m.active.ID)
+	if !ok {
+		m.query.ReportError(errors.New("connection is not open"))
+		return m, nil
+	}
+	m.query.MarkRunning()
+	return m, m.executeQuery(handle, sql)
+}
+
+func (m Model) executeQuery(handle *sql.DB, sql string) tea.Cmd {
+	return func() tea.Msg {
+		statements := query.SplitStatements(sql)
+		if len(statements) == 0 {
+			return queryFailedMsg{Err: errors.New("no executable SQL")}
+		}
+
+		started := time.Now()
+		var last db.QueryResult
+		for i, statement := range statements {
+			result := db.Execute(context.Background(), handle, statement, db.DefaultMaxRows)
+			if result.Err != nil {
+				return queryFailedMsg{Err: fmt.Errorf("statement %d: %w", i+1, result.Err)}
+			}
+			last = result
+		}
+		last.Elapsed = time.Since(started)
+		return queryFinishedMsg{Result: last, Statements: len(statements)}
 	}
 }
 
@@ -162,6 +228,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.focus == FocusWorkspace {
 		var cmd tea.Cmd
 		m.workspace, cmd = m.workspace.Update(msg)
+		return m, cmd
+	}
+	if m.focus == FocusQuery {
+		var cmd tea.Cmd
+		m.query, cmd = m.query.Update(msg)
 		return m, cmd
 	}
 	return m, nil
@@ -207,13 +278,13 @@ func (m Model) View() string {
 	lay := m.layout()
 
 	workspaceView := m.pane("Connections", m.workspace.View(), lay.workspaceW, lay.bodyH, m.focus == FocusWorkspace)
-	query := m.pane("Query", "no connection selected", lay.rightW, lay.queryH, m.focus == FocusQuery)
-	results := m.pane("Results", "no results yet", lay.rightW, lay.resultH, m.focus == FocusResult)
+	queryView := m.pane("Query", m.query.View(), lay.rightW, lay.queryH, m.focus == FocusQuery)
+	results := m.pane("Results", m.resultsView(lay.rightW-4), lay.rightW, lay.resultH, m.focus == FocusResult)
 
 	body := lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		workspaceView,
-		lipgloss.JoinVertical(lipgloss.Left, query, results),
+		lipgloss.JoinVertical(lipgloss.Left, queryView, results),
 	)
 	status := m.theme.Status.Width(lay.width).Render(m.statusLine(lay))
 	helpView := m.theme.Help.Width(lay.width).Render(m.help.View(m.keys))
@@ -239,13 +310,50 @@ func (m Model) statusLine(lay layout) string {
 	return strings.Join(parts, " · ")
 }
 
-// resize propagates the current pane geometry to child models.
+// resize propagates the current pane geometry to child models. Pane content
+// includes the title row, so children get height-3 (border and title removed).
 func (m *Model) resize() {
 	lay := m.layout()
-	m.workspace.SetSize(max(lay.workspaceW-4, 1), max(lay.bodyH-2, 1))
+	m.workspace.SetSize(max(lay.workspaceW-4, 1), max(lay.bodyH-3, 1))
+	m.query.SetSize(max(lay.rightW-4, 1), max(lay.queryH-3, 1))
 	if m.active != nil {
 		m.workspace.SetActive(m.active.ID)
 	}
+}
+
+func (m Model) resultsView(width int) string {
+	if m.query.Running() {
+		return "running…"
+	}
+	if m.lastQueryErr != nil {
+		return "error: " + truncate(m.lastQueryErr.Error(), width)
+	}
+	if m.lastResult == nil {
+		return "no results yet"
+	}
+	result := m.lastResult
+	header := fmt.Sprintf("%s · %s", pluralize(result.RowCount, "row"), query.FormatElapsed(result.Elapsed))
+	if result.Truncated {
+		header += " · truncated"
+	}
+	if len(result.Columns) > 0 {
+		header += " · " + strings.Join(result.Columns, ", ")
+	}
+	return truncate(header, width)
+}
+
+func truncate(text string, width int) string {
+	if width <= 0 {
+		return text
+	}
+	return ansi.Truncate(text, width, "…")
+}
+
+func pluralize(count int, singular string) string {
+	if count == 1 {
+		return "1 " + singular
+	}
+	return fmt.Sprintf("%d %ss", count, singular)
 }
 
 type layout struct {

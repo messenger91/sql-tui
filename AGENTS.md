@@ -2,7 +2,7 @@
 
 ## Current state
 
-Completed: §0–§4 — bootstrap, `internal/db` (full SQLite; MySQL/Postgres connect only), the root TUI shell, and the workspace pane (add/edit/delete/activate connections, persisted JSON). M2 is in progress: the query editor (§5) and table results (§6.1) are still placeholders. MySQL/Postgres schema introspection returns `ErrUnsupportedSchema` until M5. `TODO.md` is authoritative for what is implemented.
+Completed: §0–§5 — bootstrap, `internal/db` (full SQLite; MySQL/Postgres connect only), root TUI shell, workspace pane, and the query editor with execution. M2 is one step from done: the results pane only shows a summary line until §6.1 renders the table. MySQL/Postgres schema introspection returns `ErrUnsupportedSchema` until M5. `TODO.md` is authoritative for what is implemented.
 
 ## Source of truth
 
@@ -49,9 +49,18 @@ These are easy to violate when writing the first implementation:
 - DSNs are masked in the list (`maskDSN`), but the form and the on-disk JSON keep them plaintext.
 - `main` must call `model.Close()` after `tea.NewProgram(...).Run()`; the manager is a pointer inside a copied model, so closing there releases all handles.
 
+## Query gotchas
+
+- The editor never touches the database. `ctrl+r`/`F5` emits `query.ExecuteRequestedMsg`; the root model runs `SplitStatements` and `db.Execute` for each statement, then sends `queryFinishedMsg` or `queryFailedMsg`. Keep execution out of `internal/query` so §11 can replace it with sessions.
+- `SplitStatements` is the shared lightweight scanner: it understands quotes, doubled quotes, backslash escapes, `--`/`/* */` comments, and `$$`/`$tag$` blocks. §10/§12 must reuse or extend it rather than adding a second parser.
+- Multi-statement runs are sequential and only the **last** result set is shown; the count is reported in the query status. An error aborts the batch with `statement N:` context.
+- `MarkRunning` exists because `ExecuteRequestedMsg` can be injected directly; it guarantees the second `ctrl+r` is ignored even if the request did not originate from the textarea.
+- History is capped at 50 entries, collapses consecutive duplicates, and `ctrl+↑`/`ctrl+↓` navigate it. The draft buffer restores when moving past the newest entry.
+
 ## App shell gotchas
 
 - Layout is computed from `WindowSizeMsg`; before the first resize it falls back to 80×24. `layout()` derives help height from the rendered help view, so expanding `?` full help shrinks the pane area — do not hardcode a one-line footer.
+- A pane's content includes its title row: children must be sized to `outerHeight-3` (border + title), or the pane grows a line and the full-screen layout drifts. Width is `outerWidth-4` (border + horizontal padding).
 - The modal compositor (`overlay.go`) uses `github.com/charmbracelet/x/ansi` (already a transitive dep of Lip Gloss) for cell-accurate splicing. It replaces the horizontal span and keeps background margins intact; tests cover ANSI-styled backgrounds.
 - While a modal is open it swallows all keys except `ctrl+c` (quit). `esc` closes it.
 - Focus cycles `workspace → query → results` with `tab`; `shift+tab` reverses.

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/messenger91/sql-tui/internal/db"
+	"github.com/messenger91/sql-tui/internal/query"
 	"github.com/messenger91/sql-tui/internal/workspace"
 )
 
@@ -231,5 +233,112 @@ func TestDeactivationClearsActiveConnection(t *testing.T) {
 	m = updated.(Model)
 	if m.active != nil || m.schema != nil {
 		t.Fatalf("active=%+v schema=%+v", m.active, m.schema)
+	}
+}
+
+func openActive(t *testing.T, m Model) Model {
+	t.Helper()
+	connection := db.Connection{
+		ID: "c1", Name: "local", Driver: db.DriverSQLite, DSN: ":memory:", ReadOnly: true,
+	}
+	if _, err := m.manager.Open(context.Background(), connection); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	m.active = &connection
+	return m
+}
+
+func TestQueryExecutionReturnsRows(t *testing.T) {
+	m := openActive(t, newSized(t, 80, 24))
+
+	updated, cmd := m.Update(query.ExecuteRequestedMsg{SQL: "SELECT 1 AS n"})
+	m = updated.(Model)
+	if !m.query.Running() {
+		t.Fatal("query pane not marked running")
+	}
+	if cmd == nil {
+		t.Fatal("no execution command")
+	}
+
+	msg, ok := cmd().(queryFinishedMsg)
+	if !ok {
+		t.Fatalf("unexpected message %T", msg)
+	}
+	updated, _ = m.Update(msg)
+	m = updated.(Model)
+
+	if m.lastQueryErr != nil {
+		t.Fatalf("query error: %v", m.lastQueryErr)
+	}
+	if m.focus != FocusResult {
+		t.Fatalf("focus = %v, want results", m.focus)
+	}
+	if m.lastResult == nil || len(m.lastResult.Rows) != 1 {
+		t.Fatalf("result = %+v", m.lastResult)
+	}
+	if len(m.lastResult.Columns) != 1 || m.lastResult.Columns[0] != "n" {
+		t.Fatalf("columns = %v", m.lastResult.Columns)
+	}
+	if got := m.lastResult.Rows[0][0]; got != int64(1) {
+		t.Fatalf("value = %#v", got)
+	}
+}
+
+func TestQueryExecutionRunsAllStatements(t *testing.T) {
+	m := openActive(t, newSized(t, 80, 24))
+	sql := "CREATE TABLE t (x INTEGER); INSERT INTO t VALUES (7); SELECT x FROM t"
+
+	updated, cmd := m.Update(query.ExecuteRequestedMsg{SQL: sql})
+	m = updated.(Model)
+	msg := cmd().(queryFinishedMsg)
+	if msg.Statements != 3 {
+		t.Fatalf("statements = %d", msg.Statements)
+	}
+
+	updated, _ = m.Update(msg)
+	m = updated.(Model)
+	if m.lastQueryErr != nil {
+		t.Fatalf("query error: %v", m.lastQueryErr)
+	}
+	if m.lastResult == nil || len(m.lastResult.Rows) != 1 {
+		t.Fatalf("result = %+v", m.lastResult)
+	}
+	if got := m.lastResult.Rows[0][0]; got != int64(7) {
+		t.Fatalf("value = %#v", got)
+	}
+}
+
+func TestQueryExecutionFailureKeepsFocus(t *testing.T) {
+	m := openActive(t, newSized(t, 80, 24))
+
+	updated, cmd := m.Update(query.ExecuteRequestedMsg{SQL: "SELECT * FROM missing"})
+	m = updated.(Model)
+	failed, ok := cmd().(queryFailedMsg)
+	if !ok {
+		t.Fatal("expected queryFailedMsg")
+	}
+
+	updated, _ = m.Update(failed)
+	m = updated.(Model)
+	if m.lastQueryErr == nil {
+		t.Fatal("error not recorded")
+	}
+	if m.focus != FocusWorkspace {
+		t.Fatalf("focus changed on failure: %v", m.focus)
+	}
+	if !strings.Contains(m.query.View(), "error:") {
+		t.Fatalf("query pane missing error:\n%s", m.query.View())
+	}
+}
+
+func TestQueryWithoutConnectionIsRejected(t *testing.T) {
+	m := newSized(t, 80, 24)
+	updated, cmd := m.Update(query.ExecuteRequestedMsg{SQL: "SELECT 1"})
+	m = updated.(Model)
+	if cmd != nil {
+		t.Fatal("executed without a connection")
+	}
+	if !strings.Contains(m.query.View(), "no connection selected") {
+		t.Fatalf("query pane = %q", m.query.View())
 	}
 }

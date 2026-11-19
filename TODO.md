@@ -104,18 +104,18 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 
 ## 5. Query window (SQL editor)
 
-- [ ] Use `bubbles/textarea` as the editor:
+- [x] Use `bubbles/textarea` as the editor:
   - Multi-line, vertical scrolling, unicode/paste support.
   - Placeholder: `SELECT * FROM …`.
-- [ ] Bind **execute** to `ctrl+r` (or `F5`): build a `tea.Cmd` that calls `db.Execute`; emit `queryStartedMsg`, then `queryFinishedMsg(QueryResult)`. *(Superseded by §11 async runner; keep the simple path working first.)*
-- [ ] During execution: show a spinner + "Running…" status in the query pane footer; disable execute key until done.
-- [ ] On result: set result view state, move focus to Result window, populate table.
-- [ ] **Editor quality-of-life** (incremental):
+- [x] Bind **execute** to `ctrl+r` (or `F5`): build a `tea.Cmd` that calls `db.Execute`; emit `queryStartedMsg`, then `queryFinishedMsg(QueryResult)`. *(Superseded by §11 async runner; keep the simple path working first.)* (Editor emits `ExecuteRequestedMsg`; the root model owns execution and replies with `queryFinishedMsg`/`queryFailedMsg`.)
+- [x] During execution: show a spinner + "Running…" status in the query pane footer; disable execute key until done.
+- [ ] On result: set result view state, move focus to Result window, populate table. (Focus + result storage done; table rendering is §6.1.)
+- [x] **Editor quality-of-life** (incremental):
   - [ ] Basic SQL keyword highlighting via `textarea` styling (regex-based, optional).
   - [ ] `ctrl+s` opens "Save as favorite" dialog (see §7).
-  - [ ] History buffer (last N executed queries) with `ctrl+↑/↓` to recall.
-- [ ] **Multi-statement safety**: strip trailing semicolons; if multiple statements detected, MVP executes the first and warns, or split-and-run sequentially with per-statement results (decide).
-- [ ] Leave a hook for the autocomplete popup (§10): keep the editor wrapped in a `queryPane` model that owns both the textarea and the popup, so the popup can intercept keys before the textarea.
+  - [x] History buffer (last N executed queries) with `ctrl+↑/↓` to recall. (Last 50, consecutive duplicates collapsed.)
+- [x] **Multi-statement safety**: strip trailing semicolons; if multiple statements detected, MVP executes the first and warns, or split-and-run sequentially with per-statement results (decide). (Decided: string/comment/dollar-quote-aware split, sequential execution, last result shown with statement count.)
+- [x] Leave a hook for the autocomplete popup (§10): keep the editor wrapped in a `queryPane` model that owns both the textarea and the popup, so the popup can intercept keys before the textarea. (The popup itself lands in §10.3.)
 
 ---
 
