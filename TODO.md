@@ -204,21 +204,22 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 - [x] Show FK hints inline (e.g., `user_id → users.id`) if `LoadSchema` captured them.
 
 ### 10.3 Autocomplete popup
-- [ ] `internal/query/autocomplete` model: a popup rendered just below the cursor line inside the query pane (use `textarea`'s `Line()`/`Column()` or maintain an independent cursor mirror — decide and document).
-- [ ] Trigger: on every keystroke, if the token under cursor is ≥1 char, compute candidates; debounce ~50ms; also allow manual `ctrl+space`.
-- [ ] **Tokenizer** (lightweight, good enough — not a full SQL parser):
-  - [ ] Split the text up to the cursor into tokens: identifiers, strings, numbers, punctuation, keywords.
-  - [ ] Track statement boundaries (`;`) and the current clause by scanning backwards for the nearest clause keyword (`SELECT`, `FROM`, `JOIN`, `WHERE`, `GROUP BY`, `ORDER BY`, `HAVING`, `SET`, `VALUES`, `UPDATE`, `INTO`).
-  - [ ] Extract `FROM`/`JOIN` table references (including aliases) to scope column suggestions.
-- [ ] **Context rules**:
-  - [ ] After `FROM` / `JOIN` / `UPDATE` / `INSERT INTO` → suggest table & view names.
-  - [ ] After `SELECT` / `WHERE` / `ON` / `GROUP BY` / `ORDER BY` / `HAVING` / `SET` → suggest columns of tables in scope; if no `FROM` yet, suggest all columns across cached tables (grouped by table).
-  - [ ] After `alias.` → suggest only that table's columns.
-  - [ ] Otherwise → SQL keywords (`SELECT`, `WHERE`, …), plus schema names.
-- [ ] **Ranking**: exact prefix match > prefix (case-insensitive) > fuzzy (`sahilm/fuzzy`); tie-break by kind (table before keyword) and recency (columns used earlier in the current session rank higher).
-- [ ] **UI**: popup list of ≤10 items, each with icon (`▦` table, `▤` column, `K` keyword), dim type suffix; `↑/↓` to move, `tab`/`enter` to accept, `esc` to dismiss, scroll if >10.
-- [ ] Acceptance inserts the identifier, replacing the token under the cursor; for columns, insert bare name (not `alias.`) unless the user typed the alias prefix.
-- [ ] Ensure `esc`/`tab` are only swallowed by the popup when it is open — otherwise pass through to the textarea/pane focus logic.
+- [x] `internal/query/autocomplete` model: a popup rendered just below the cursor line inside the query pane (use `textarea`'s `Line()`/`Column()` or maintain an independent cursor mirror — decide and document).
+  - Decision: the cursor rune index is derived from `textarea.Line()` + `LineInfo()` (`StartColumn + ColumnOffset`). The popup is rendered below the editor viewport (the editor shrinks to make room) rather than overlaid at the cursor row; it sits directly below the cursor for the common single/few-line query.
+- [x] Trigger: on every keystroke, if the token under cursor is ≥1 char, compute candidates; debounce ~50ms; also allow manual `ctrl+space`. (Generational 50ms `tea.Tick`, manual `ctrl+space`/`ctrl+@`.)
+- [x] **Tokenizer** (lightweight, good enough — not a full SQL parser):
+  - [x] Split the text up to the cursor into tokens: identifiers, strings, numbers, punctuation, keywords.
+  - [x] Track statement boundaries (`;`) and the current clause by scanning backwards for the nearest clause keyword (`SELECT`, `FROM`, `JOIN`, `WHERE`, `GROUP BY`, `ORDER BY`, `HAVING`, `SET`, `VALUES`, `UPDATE`, `INTO`).
+  - [x] Extract `FROM`/`JOIN` table references (including aliases) to scope column suggestions.
+- [x] **Context rules**:
+  - [x] After `FROM` / `JOIN` / `UPDATE` / `INSERT INTO` → suggest table & view names.
+  - [x] After `SELECT` / `WHERE` / `ON` / `GROUP BY` / `ORDER BY` / `HAVING` / `SET` → suggest columns of tables in scope; if no `FROM` yet, suggest all columns across cached tables (grouped by table).
+  - [x] After `alias.` → suggest only that table's columns. (Aliases resolve against the full statement, since `FROM` often follows the cursor.)
+  - [x] Otherwise → SQL keywords (`SELECT`, `WHERE`, …), plus schema names.
+- [x] **Ranking**: exact prefix match > prefix (case-insensitive) > fuzzy (`sahilm/fuzzy`); tie-break by kind (table before keyword) and recency (columns used earlier in the current session rank higher). (Recency is tracked per accepted identifier.)
+- [x] **UI**: popup list of ≤10 items, each with icon (`▦` table, `▤` column, `K` keyword), dim type suffix; `↑/↓` to move, `tab`/`enter` to accept, `esc` to dismiss, scroll if >10.
+- [x] Acceptance inserts the identifier, replacing the token under the cursor; for columns, insert bare name (not `alias.`) unless the user typed the alias prefix.
+- [x] Ensure `esc`/`tab` are only swallowed by the popup when it is open — otherwise pass through to the textarea/pane focus logic.
 
 ### 10.4 Tests
 - [ ] Tokenizer table tests: strings with escaped quotes, comments (`--`, `/* */`), multiple statements, aliases, trailing whitespace.

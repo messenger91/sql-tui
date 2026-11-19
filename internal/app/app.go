@@ -142,17 +142,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.active = &connection
 		m.focus = FocusQuery
 		m.workspace.ActivationSucceeded(connection.ID)
+		m.query.SetSchema(nil)
 		m.syncFocus()
 		cmd := m.refreshSchema(connection)
 		return m, cmd
 	case workspace.DeactivatedMsg:
 		m.active = nil
 		m.schemaLoad = false
+		m.query.SetSchema(nil)
 		return m, nil
 	case schemaLoadedMsg:
 		m.schema.Store(msg.ConnectionID, msg.Tables, msg.Err)
 		if m.active != nil && m.active.ID == msg.ConnectionID {
 			m.schemaLoad = false
+			if entry, ok := m.schema.Get(msg.ConnectionID); ok {
+				m.query.SetSchema(entry.Index)
+			}
 			if m.browser != nil {
 				m.browser.SetTables(msg.Tables)
 			}
@@ -310,6 +315,15 @@ func (m Model) executeQuery(handle *sql.DB, sql string) tea.Cmd {
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, m.keys.Quit) {
 		return m, tea.Quit
+	}
+	// The autocomplete popup owns tab (accept), runes (continue typing), and
+	// must not let global bindings swallow them.
+	if m.focus == FocusQuery && m.query.PopupVisible() {
+		if key.Matches(msg, m.keys.Cycle) || msg.Type == tea.KeyRunes {
+			var cmd tea.Cmd
+			m.query, cmd = m.query.Update(msg)
+			return m, cmd
+		}
 	}
 	if m.export != nil {
 		if key.Matches(msg, m.keys.Close) {
