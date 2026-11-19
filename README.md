@@ -26,9 +26,9 @@ apply.
   enable inline editing. An optional `Schema` field sets Postgres
   `search_path` or the MySQL database.
 - **Query editor** with session history (`ctrl+↑/↓`) persisted across restarts
-  to `history.json`, multi-statement splitting (string/comment/dollar-quote
-  aware), and a 50 ms-debounced, schema-aware autocomplete popup
-  (`ctrl+space`). `x` shows the driver query plan.
+  to `history.json`, SQL syntax highlighting, multi-statement splitting
+  (string/comment/dollar-quote aware), and a 50 ms-debounced, schema-aware
+  autocomplete popup (`ctrl+space`). `E` shows the driver query plan.
 - **Schema browser** (`ctrl+b`): expandable table/view/column tree with PK and
   FK hints, fuzzy filter, and identifier insertion at the cursor.
 - **Results**: table / CSV / JSON views (`v`), capped at 10,000 rows with
@@ -69,8 +69,8 @@ make build   # -> bin/sql-tui
 
 | Driver  | DSN |
 |---|---|
-| SQLite  | `:memory:` or `/path/to/file.db` |
-| MySQL   | `user:pass@tcp(127.0.0.1:3306)/dbname` |
+| SQLite  | `:memory:`, `/path/to/file.db`, or `sqlite://…` |
+| MySQL   | `user:pass@tcp(127.0.0.1:3306)/dbname` or `mysql://user:pass@host/db` |
 | Postgres| `postgres://user:pass@localhost:5432/dbname?sslmode=disable` |
 
 DSNs are stored in plaintext locally; passwords are masked in the list UI.
@@ -86,7 +86,9 @@ DSNs are stored in plaintext locally; passwords are masked in the list UI.
 | `ctrl+space` | open autocomplete |
 | `ctrl+↑` / `ctrl+↓` | query history |
 | `ctrl+b` | schema browser (`ctrl+r` inside refreshes) |
-| `x` | EXPLAIN the current statement (`Query plan` modal) |
+| `x` | command menu (add/connect/favorites/tabs/export/quit) |
+| `E` | EXPLAIN the current statement (`Query plan` modal) |
+| `t` | table dropdown in the connections pane (`enter` fetches LIMIT 100) |
 | `ctrl+s` / `ctrl+f` | save / browse favorites |
 | `v` | cycle table → CSV → JSON (results pane) |
 | `ctrl+e` | export CSV/JSON to file or clipboard (results pane) |

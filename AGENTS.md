@@ -51,6 +51,14 @@ These are easy to violate when writing the first implementation:
 - DSNs are masked in the list (`maskDSN`), but the form and the on-disk JSON keep them plaintext.
 - `main` must call `model.Close()` after `tea.NewProgram(...).Run()`; the manager is a pointer inside a copied model, so closing there releases all handles.
 
+## UI gotchas (post-spec batch)
+
+- The query editor is *rendered* by `query.Model.renderEditor` (highlight + block caret); the textarea only owns input/scroll state. Anything that reads editor output must use `EditorView()`, and `renderLines` clips to `m.width`.
+- The workspace has a second `bubbles/list` for tables (`tables`); `SetSize` must size BOTH lists, and `SetTables` is fed from `schemaLoadedMsg`. `t` toggles it, `enter` emits `workspace.FetchTableMsg` (root runs `SELECT * FROM <quoted> LIMIT 100` via the shared `executeSQL` path).
+- `x` is the command menu (outside the editor); `E` is explain (results pane). Item run funcs are `func(*Model) tea.Cmd` and `handleCommandMenuKey` returns `m, cmd` after running — never return a `*Model` from those helpers or appUpdate's type assertion breaks.
+- Help is a modal (`helpOpen`); `?` opens it outside the editor. `helpText()` is static — update it when bindings change.
+- `export.ResultStats` is the single formatter for `rows · speed · elapsed`; the runner tracks drained rows in `Event.Fetched` and `result.Model.UpdateStats` applies them on done.
+
 ## Stretch-feature gotchas
 
 - `db.ParseDSN` normalizes URL-style DSNs before `sql.Open`; `Connection.DSN` stays as entered for display, so `maskDSN` still sees URLs.

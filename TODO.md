@@ -356,6 +356,21 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
 
 ## 15. Stretch / future
 
+### 15.9 UI improvements (post-spec batch)
+
+- [x] Table dropdown in the connection pane (`t`) with quick `SELECT * FROM <t> LIMIT 100`.
+- [x] `?` opens a keybinding context menu instead of extending the footer list.
+- [x] SQL syntax highlighting with a block caret in the editor.
+- [x] JSON result-view syntax highlighting.
+- [x] Fetch speed and total fetched rows in the result status line.
+- [x] Bulk command menu on `x` (add/edit/delete/connect, favorites, tabs, export, schema, quit); `E` explains.
+- [x] App version in the status bar and `--version`/`version` flag.
+- [x] Full TUI smoke test pass (dropdown fetch, help/command menus, highlight, JSON view, stats).
+
+### Stretch
+
+
+
 - [x] Connection via URL (`mysql://user:pass@host/db`) parser. (`db.ParseDSN`: MySQL URL → native DSN; `postgresql://` normalization; `sqlite://`/`sqlite:` paths. Native DSNs unchanged.)
 - [x] Persistent query history (shared with per-tab recall in §5). (`internal/history`; `history.json` capped at 200; loaded at startup and seeded into every tab.)
 - [x] EXPLAIN / query-plan visualizer (per-driver plan parsing + tree render). (`x`; SQLite plan rows become an indented tree; Postgres/MySQL text plans render line by line.)
