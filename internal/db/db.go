@@ -125,7 +125,11 @@ func Connect(ctx context.Context, conn Connection) (*sql.DB, error) {
 	if !ok {
 		return nil, fmt.Errorf("%w: %q", ErrUnsupportedDriver, conn.Driver)
 	}
-	handle, err := sql.Open(name, conn.DSN)
+	dsn, err := ParseDSN(conn.Driver, conn.DSN)
+	if err != nil {
+		return nil, err
+	}
+	handle, err := sql.Open(name, dsn)
 	if err != nil {
 		return nil, fmt.Errorf("db: open %s: %w", conn.Driver, err)
 	}
@@ -140,7 +144,34 @@ func Connect(ctx context.Context, conn Connection) (*sql.DB, error) {
 		_ = handle.Close()
 		return nil, fmt.Errorf("db: ping %s: %w", conn.Driver, err)
 	}
+	if err := applySchemaOption(ctx, handle, conn); err != nil {
+		_ = handle.Close()
+		return nil, err
+	}
 	return handle, nil
+}
+
+func applySchemaOption(ctx context.Context, handle *sql.DB, conn Connection) error {
+	if conn.Options == nil {
+		return nil
+	}
+	schema := strings.TrimSpace(conn.Options[OptionSchema])
+	if schema == "" {
+		return nil
+	}
+	var statement string
+	switch conn.Driver {
+	case DriverPostgres:
+		statement = "SET search_path TO " + quoteDouble(schema)
+	case DriverMySQL:
+		statement = "USE " + quoteBacktick(schema)
+	default:
+		return fmt.Errorf("db: schema option is not supported for %s", conn.Driver)
+	}
+	if _, err := handle.ExecContext(ctx, statement); err != nil {
+		return fmt.Errorf("db: set schema %q: %w", schema, err)
+	}
+	return nil
 }
 
 func driverName(d Driver) (string, bool) {

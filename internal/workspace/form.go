@@ -28,8 +28,9 @@ type form struct {
 
 	name   textinput.Model
 	dsn    textinput.Model
+	schema textinput.Model
 	driver db.Driver
-	focus  int // 0 name, 1 driver, 2 dsn, 3 access
+	focus  int // 0 name, 1 driver, 2 dsn, 3 schema, 4 access
 	err    string
 	width  int
 }
@@ -44,11 +45,17 @@ func newForm(mode formMode) *form {
 	dsn.CharLimit = 512
 	dsn.Prompt = ""
 
+	schema := textinput.New()
+	schema.CharLimit = 80
+	schema.Prompt = ""
+	schema.Placeholder = "optional schema / search_path"
+
 	f := &form{
 		mode:     mode,
 		readOnly: true,
 		name:     name,
 		dsn:      dsn,
+		schema:   schema,
 		driver:   db.DriverSQLite,
 		width:    50,
 	}
@@ -64,6 +71,9 @@ func (f *form) setConnection(conn db.Connection) {
 	f.driver = conn.Driver
 	f.name.SetValue(conn.Name)
 	f.dsn.SetValue(conn.DSN)
+	if conn.Options != nil {
+		f.schema.SetValue(conn.Options[db.OptionSchema])
+	}
 	f.applyDriverHint()
 	f.syncFocus()
 }
@@ -80,6 +90,8 @@ func (f *form) syncFocus() {
 		f.name.Focus()
 	case 2:
 		f.dsn.Focus()
+	case 3:
+		f.schema.Focus()
 	}
 }
 
@@ -115,11 +127,11 @@ func (f *form) cycleDriver(delta int) {
 func (f *form) update(msg tea.KeyMsg) bool {
 	switch msg.String() {
 	case "tab":
-		f.focus = (f.focus + 1) % 4
+		f.focus = (f.focus + 1) % 5
 		f.syncFocus()
 		return false
 	case "shift+tab":
-		f.focus = (f.focus + 3) % 4
+		f.focus = (f.focus + 4) % 5
 		f.syncFocus()
 		return false
 	}
@@ -136,7 +148,7 @@ func (f *form) update(msg tea.KeyMsg) bool {
 		return false
 	}
 
-	if f.focus == 3 {
+	if f.focus == 4 {
 		switch {
 		case key.Matches(msg, key.NewBinding(key.WithKeys("left", "right", "h", "l", " "))):
 			f.readOnly = !f.readOnly
@@ -150,10 +162,13 @@ func (f *form) update(msg tea.KeyMsg) bool {
 		return true
 	}
 	var cmd tea.Cmd
-	if f.focus == 0 {
+	switch f.focus {
+	case 0:
 		f.name, cmd = f.name.Update(msg)
-	} else {
+	case 2:
 		f.dsn, cmd = f.dsn.Update(msg)
+	case 3:
+		f.schema, cmd = f.schema.Update(msg)
 	}
 	_ = cmd // cursor blink is not needed for a transient modal
 	return false
@@ -173,12 +188,22 @@ func (f *form) validate() (db.Connection, bool) {
 		f.err = "DSN is required"
 		return db.Connection{}, false
 	}
+	schema := strings.TrimSpace(f.schema.Value())
+	if schema != "" && f.driver == db.DriverSQLite {
+		f.err = "schema is not supported for SQLite"
+		return db.Connection{}, false
+	}
+	var options map[string]string
+	if schema != "" {
+		options = map[string]string{db.OptionSchema: schema}
+	}
 	f.err = ""
 	return db.Connection{
 		ID:       f.id,
 		Name:     name,
 		Driver:   f.driver,
 		DSN:      dsn,
+		Options:  options,
 		ReadOnly: f.readOnly,
 	}, true
 }
@@ -194,6 +219,7 @@ func (f *form) view(width int) string {
 	inputWidth := max(min(width-4, 60), 16)
 	f.name.Width = inputWidth
 	f.dsn.Width = inputWidth
+	f.schema.Width = inputWidth
 
 	label := lipgloss.NewStyle().Bold(true)
 	var b strings.Builder
@@ -209,6 +235,12 @@ func (f *form) view(width int) string {
 	b.WriteString(label.Render("DSN"))
 	b.WriteString("\n")
 	b.WriteString(f.dsn.View())
+	b.WriteString("\n\n")
+	b.WriteString(label.Render("Schema"))
+	b.WriteString("\n")
+	b.WriteString(f.schema.View())
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().Faint(true).Render("optional: Postgres search_path / MySQL database"))
 	b.WriteString("\n\n")
 	b.WriteString(label.Render("Access"))
 	b.WriteString("\n◀ ")

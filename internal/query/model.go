@@ -80,6 +80,16 @@ func (m Model) Init() tea.Cmd {
 // SQL returns the current editor contents.
 func (m Model) SQL() string { return m.editor.Value() }
 
+// SetHistory seeds the recall buffer with persisted queries (oldest first).
+func (m *Model) SetHistory(queries []string) {
+	m.history = append([]string(nil), queries...)
+	if len(m.history) > maxHistory {
+		m.history = m.history[len(m.history)-maxHistory:]
+	}
+	m.historyIndex = len(m.history)
+	m.draft = ""
+}
+
 // SetSQL replaces the editor contents and focuses it.
 func (m *Model) SetSQL(sql string) {
 	m.hidePopup()

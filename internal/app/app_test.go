@@ -328,8 +328,11 @@ func runQuerySync(t *testing.T, m Model, sql string) Model {
 		mu.Unlock()
 	})
 
-	updated, _ := m.Update(query.ExecuteRequestedMsg{SQL: sql})
+	updated, cmd := m.Update(query.ExecuteRequestedMsg{SQL: sql})
 	m = updated.(Model)
+	if cmd != nil {
+		_ = collectCmds(cmd)
+	}
 	m.runners.wait()
 
 	mu.Lock()

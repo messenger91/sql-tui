@@ -30,6 +30,18 @@ func TestFormValidation(t *testing.T) {
 	if conn.Driver != db.DriverSQLite || conn.DSN != ":memory:" || !conn.ReadOnly {
 		t.Fatalf("connection = %+v", conn)
 	}
+
+	form.schema.SetValue("main")
+	if _, ok := form.validate(); ok {
+		t.Fatal("SQLite accepted a schema option")
+	}
+	form.schema.SetValue("")
+	form.driver = db.DriverPostgres
+	form.schema.SetValue("app")
+	conn, ok = form.validate()
+	if !ok || conn.Options[db.OptionSchema] != "app" {
+		t.Fatalf("options = %+v", conn.Options)
+	}
 }
 
 func TestFormDriverCycleAndHints(t *testing.T) {
@@ -73,11 +85,15 @@ func TestFormTabMovesFocus(t *testing.T) {
 		t.Fatalf("focus after third tab = %d", form.focus)
 	}
 	form.update(tea.KeyMsg{Type: tea.KeyTab})
+	if form.focus != 4 {
+		t.Fatalf("focus after fourth tab = %d", form.focus)
+	}
+	form.update(tea.KeyMsg{Type: tea.KeyTab})
 	if form.focus != 0 {
 		t.Fatalf("focus did not wrap: %d", form.focus)
 	}
 	form.update(tea.KeyMsg{Type: tea.KeyShiftTab})
-	if form.focus != 3 {
+	if form.focus != 4 {
 		t.Fatalf("shift+tab focus = %d", form.focus)
 	}
 }
@@ -87,7 +103,7 @@ func TestFormAccessToggle(t *testing.T) {
 	if !form.readOnly {
 		t.Fatal("new connections must default to read-only")
 	}
-	form.focus = 3
+	form.focus = 4
 	form.update(tea.KeyMsg{Type: tea.KeyRight})
 	if form.readOnly {
 		t.Fatal("access toggle did not switch to writable")

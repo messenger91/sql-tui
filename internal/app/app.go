@@ -18,6 +18,7 @@ import (
 	"github.com/messenger91/sql-tui/internal/db"
 	"github.com/messenger91/sql-tui/internal/export"
 	"github.com/messenger91/sql-tui/internal/favorites"
+	"github.com/messenger91/sql-tui/internal/history"
 	"github.com/messenger91/sql-tui/internal/query"
 	"github.com/messenger91/sql-tui/internal/result"
 	"github.com/messenger91/sql-tui/internal/schema"
@@ -47,20 +48,23 @@ type modalBox struct {
 type Config struct {
 	ConnectionsPath string
 	FavoritesPath   string
+	HistoryPath     string
 	Clipboard       export.Clipboard
 }
 
 // Model is the root application model.
 type Model struct {
-	theme     styles.Theme
-	help      help.Model
-	keys      keyMap
-	manager   *db.Manager
-	workspace workspace.Model
-	favorites favorites.Model
-	schema    *schema.Cache
-	clipboard export.Clipboard
-	sessions  *session.Manager
+	theme        styles.Theme
+	help         help.Model
+	keys         keyMap
+	manager      *db.Manager
+	workspace    workspace.Model
+	favorites    favorites.Model
+	schema       *schema.Cache
+	clipboard    export.Clipboard
+	sessions     *session.Manager
+	history      []string
+	historyStore *history.Store
 
 	focus         Focus
 	width, height int
@@ -104,18 +108,19 @@ func NewWithConfig(cfg Config) Model {
 	sessions := session.NewManager()
 	sessions.New("")
 	return Model{
-		theme:     styles.Default(),
-		help:      h,
-		keys:      defaultKeyMap(),
-		manager:   manager,
-		workspace: workspace.New(store, manager),
-		favorites: favorites.New(favoriteStore),
-		schema:    schema.NewCache(),
-		clipboard: clipboard,
-		sessions:  sessions,
-		sender:    newSenderHolder(),
-		runners:   newRunnerGroup(),
-		focus:     FocusWorkspace,
+		theme:        styles.Default(),
+		help:         h,
+		keys:         defaultKeyMap(),
+		manager:      manager,
+		workspace:    workspace.New(store, manager),
+		favorites:    favorites.New(favoriteStore),
+		schema:       schema.NewCache(),
+		clipboard:    clipboard,
+		sessions:     sessions,
+		sender:       newSenderHolder(),
+		runners:      newRunnerGroup(),
+		historyStore: history.NewStore(cfg.HistoryPath),
+		focus:        FocusWorkspace,
 	}
 }
 
@@ -128,12 +133,13 @@ func defaultConfig() Config {
 	return Config{
 		ConnectionsPath: filepath.Join(base, "connections.json"),
 		FavoritesPath:   filepath.Join(base, "favorites.json"),
+		HistoryPath:     filepath.Join(base, "history.json"),
 	}
 }
 
 // Init implements tea.Model.
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{m.workspace.Init(), m.favorites.Init()}
+	cmds := []tea.Cmd{m.workspace.Init(), m.favorites.Init(), m.loadHistory()}
 	if s := m.activeSession(); s != nil {
 		cmds = append(cmds, s.Editor.Init())
 	}
@@ -203,9 +209,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	case historyLoadedMsg:
+		if msg.Err != nil {
+			return m, nil
+		}
+		m.history = msg.Queries
+		for _, s := range m.sessions.Sessions() {
+			s.Editor.SetHistory(m.history)
+		}
+		return m, nil
 	case query.ExecuteRequestedMsg:
 		m.clearNotice()
-		return m.startQuery(msg.SQL)
+		updated, cmd := m.startQuery(msg.SQL)
+		model := updated.(Model)
+		if s := model.activeSession(); s != nil && s.Running() {
+			return model, tea.Batch(cmd, model.recordHistory(msg.SQL))
+		}
+		return model, cmd
 	case favorites.LoadMsg:
 		if s := m.activeSession(); s != nil {
 			s.SetSQL(msg.SQL)
@@ -741,6 +761,7 @@ func (m *Model) focusSessionForConnection(connection db.Connection) {
 		s.ConnectionID = connection.ID
 		s.ReadOnly = connection.ReadOnly
 		s.Driver = connection.Driver
+		s.Editor.SetHistory(m.history)
 		m.applySchema(s)
 		return
 	}
@@ -756,6 +777,7 @@ func (m *Model) focusSessionForConnection(connection db.Connection) {
 	s := m.sessions.New(connection.ID)
 	s.ReadOnly = connection.ReadOnly
 	s.Driver = connection.Driver
+	s.Editor.SetHistory(m.history)
 	m.applySchema(s)
 }
 
@@ -776,6 +798,7 @@ func (m *Model) newTab() {
 	s := m.sessions.New(connectionID)
 	s.ReadOnly = readOnly
 	s.Driver = driver
+	s.Editor.SetHistory(m.history)
 	m.applySchema(s)
 	m.focus = FocusQuery
 	m.syncFocus()
@@ -795,6 +818,7 @@ func (m *Model) closeSession(id session.ID) {
 		s := m.sessions.New(connectionID)
 		s.ReadOnly = readOnly
 		s.Driver = driver
+		s.Editor.SetHistory(m.history)
 		m.applySchema(s)
 	}
 	m.syncFocus()
