@@ -244,11 +244,12 @@ A Bubble Tea–based terminal client for querying MySQL, PostgreSQL, and SQLite,
   - `session.Manager` implemented and tested (`New`/`Get`/`Active`/`SetActive`/`Sessions`/`Close`/`Next`/`Prev`). Root-model wiring lands with the tab bar in §11.2.
 
 ### 11.2 Tab bar
-- [ ] Tab bar rendered above the query editor: `│ 1: SELECT users … │ 2: ● UPDATE orders … │ +`.
+- [x] Tab bar rendered above the query editor: `│ 1: SELECT users … │ 2: ● UPDATE orders … │ +`.
   - `●`/spinner marker when a tab is running.
-- [ ] Keys: `ctrl+t` new tab (inherits active connection), `ctrl+w` close tab (confirm if running — offer cancel), `ctrl+tab` / `ctrl+→` next, `ctrl+shift+tab` / `ctrl+←` prev, `alt+1..9` jump to tab.
-- [ ] Click on tab (if mouse enabled) to focus.
-- [ ] Closing the last tab keeps an empty tab alive (don't leave the query pane blank).
+- [x] Keys: `ctrl+t` new tab (inherits active connection), `ctrl+w` close tab (confirm if running — offer cancel), `ctrl+tab` / `ctrl+→` next, `ctrl+shift+tab` / `ctrl+←` prev, `alt+1..9` jump to tab.
+  - Terminal-safe primary bindings are `ctrl+right`/`ctrl+left` and `alt+1..9` (decision d3); `ctrl+tab` is not bound because most terminals cannot report it. `ctrl+right/left` now override textarea word navigation.
+- [ ] Click on tab (if mouse enabled) to focus. (Mouse support remains optional/deferred to §13.)
+- [x] Closing the last tab keeps an empty tab alive (don't leave the query pane blank).
 
 ### 11.3 Async runner (core)
 - [ ] `internal/session/runner.go`: `Run(ctx, db, sql, onEvent)` opens `rows`, iterates `rows.Next()` in a goroutine, and emits events:

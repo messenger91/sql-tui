@@ -2,7 +2,7 @@
 
 ## Current state
 
-Completed: §0–§9 — bootstrap, `internal/db` (SQLite, MySQL, and Postgres: connect, execute, schema), root TUI shell, workspace pane, query editor, table/CSV/JSON result views, view toggle, and export to file or clipboard. **M3, M4, and M5 are complete; §10 is complete; §11.1 is complete.** Next: §11.2 tab bar and root-model session wiring. `TODO.md` is authoritative for what is implemented.
+Completed: §0–§9 — bootstrap, `internal/db` (SQLite, MySQL, and Postgres: connect, execute, schema), root TUI shell, workspace pane, query editor, table/CSV/JSON result views, view toggle, and export to file or clipboard. **M3, M4, and M5 are complete; §10 is complete; §11.1–§11.2 are complete.** Next: §11.3 async runner/streaming. `TODO.md` is authoritative for what is implemented.
 
 ## Source of truth
 
@@ -49,6 +49,15 @@ These are easy to violate when writing the first implementation:
 - Activation is message-based: workspace emits `ActivatedMsg`; the root model focuses the query pane, calls `workspace.ActivationSucceeded` (which also clears the `connecting…` spinner), and starts an async `db.LoadSchema`. Editing the active connection re-emits `ActivatedMsg` so the schema is reloaded. If a new activation message is ever added, clear `busy` there too or the spinner runs forever.
 - DSNs are masked in the list (`maskDSN`), but the form and the on-disk JSON keep them plaintext.
 - `main` must call `model.Close()` after `tea.NewProgram(...).Run()`; the manager is a pointer inside a copied model, so closing there releases all handles.
+
+## Tab / session wiring gotchas
+
+- Root state is the `session.Manager`; use `m.activeSession()` and never add global query/result fields. Favorites, export, schema, autocomplete, and view toggles all act on the active session.
+- Activation reuses the initial empty tab, then reuses any tab for the same connection; a different connection creates a new tab. Closing the last tab creates a replacement bound to the current connection.
+- The tab bar consumes one row of the query pane: sessions are sized with `queryH-4` (border/title + tab row).
+- `ctrl+left/right` are global tab navigation (decision d3), so they shadow textarea word movement. `alt+1..9` jump by position; out-of-range digits are ignored.
+- `ctrl+w` on a running tab sets `confirmClose` and renders a confirmation modal; `y` closes (manager cancels), `n`/`esc` cancels. This modal is checked before regular key routing.
+- Session titles update on execution (`startQuery`), not while typing.
 
 ## Session gotchas
 

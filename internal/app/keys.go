@@ -13,6 +13,11 @@ type keyMap struct {
 	SaveFav      key.Binding
 	BrowseFav    key.Binding
 	BrowseSchema key.Binding
+	NewTab       key.Binding
+	CloseTab     key.Binding
+	NextTab      key.Binding
+	PrevTab      key.Binding
+	JumpTab      key.Binding
 }
 
 func defaultKeyMap() keyMap {
@@ -57,18 +62,39 @@ func defaultKeyMap() keyMap {
 			key.WithKeys("ctrl+b"),
 			key.WithHelp("ctrl+b", "schema"),
 		),
+		NewTab: key.NewBinding(
+			key.WithKeys("ctrl+t"),
+			key.WithHelp("ctrl+t", "new tab"),
+		),
+		CloseTab: key.NewBinding(
+			key.WithKeys("ctrl+w"),
+			key.WithHelp("ctrl+w", "close tab"),
+		),
+		NextTab: key.NewBinding(
+			key.WithKeys("ctrl+right"),
+			key.WithHelp("ctrl+→", "next tab"),
+		),
+		PrevTab: key.NewBinding(
+			key.WithKeys("ctrl+left"),
+			key.WithHelp("ctrl+←", "prev tab"),
+		),
+		JumpTab: key.NewBinding(
+			key.WithKeys("alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7", "alt+8", "alt+9"),
+			key.WithHelp("alt+1..9", "jump tab"),
+		),
 	}
 }
 
 // ShortHelp implements help.KeyMap.
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Cycle, k.Export, k.ViewFormat, k.Help, k.Quit}
+	return []key.Binding{k.Cycle, k.NewTab, k.Export, k.ViewFormat, k.Help, k.Quit}
 }
 
 // FullHelp implements help.KeyMap.
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Cycle, k.CyclePrev},
+		{k.NewTab, k.CloseTab, k.NextTab, k.PrevTab, k.JumpTab},
 		{k.Export, k.ViewFormat},
 		{k.SaveFav, k.BrowseFav, k.BrowseSchema},
 		{k.Help, k.Close},

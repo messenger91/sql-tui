@@ -24,10 +24,10 @@ func collectCmds(cmd tea.Cmd) []tea.Msg {
 
 func TestAutocompleteTabAcceptDoesNotCyclePanes(t *testing.T) {
 	m := activateWithSchema(t, newSized(t, 80, 24))
-	m.query.SetSQL("SELECT * FROM us")
+	m.activeSession().Editor.SetSQL("SELECT * FROM us")
 
 	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyCtrlAt}) // ctrl+space
-	if !m.query.PopupVisible() {
+	if !m.activeSession().Editor.PopupVisible() {
 		t.Fatal("popup did not open")
 	}
 
@@ -35,16 +35,16 @@ func TestAutocompleteTabAcceptDoesNotCyclePanes(t *testing.T) {
 	if m.focus != FocusQuery {
 		t.Fatalf("tab cycled panes while the popup was open: %v", m.focus)
 	}
-	if got := m.query.SQL(); got != "SELECT * FROM users" {
+	if got := m.activeSession().Editor.SQL(); got != "SELECT * FROM users" {
 		t.Fatalf("editor = %q", got)
 	}
 }
 
 func TestAutocompleteCapturesQuestionMark(t *testing.T) {
 	m := activateWithSchema(t, newSized(t, 80, 24))
-	m.query.SetSQL("SELECT * FROM us")
+	m.activeSession().Editor.SetSQL("SELECT * FROM us")
 	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyCtrlAt})
-	if !m.query.PopupVisible() {
+	if !m.activeSession().Editor.PopupVisible() {
 		t.Fatal("popup did not open")
 	}
 
@@ -52,17 +52,17 @@ func TestAutocompleteCapturesQuestionMark(t *testing.T) {
 	if m.help.ShowAll {
 		t.Fatal("'?' toggled help while the popup was open")
 	}
-	if !strings.Contains(m.query.SQL(), "?") {
-		t.Fatalf("editor = %q", m.query.SQL())
+	if !strings.Contains(m.activeSession().Editor.SQL(), "?") {
+		t.Fatalf("editor = %q", m.activeSession().Editor.SQL())
 	}
 }
 
 func TestAutocompleteDebounceThroughApp(t *testing.T) {
 	m := activateWithSchema(t, newSized(t, 80, 24))
-	m.query.SetSQL("SELECT * FROM u")
+	m.activeSession().Editor.SetSQL("SELECT * FROM u")
 
 	m, cmd := appUpdate(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
-	if m.query.PopupVisible() {
+	if m.activeSession().Editor.PopupVisible() {
 		t.Fatal("popup appeared before debounce")
 	}
 	if cmd == nil {
@@ -71,7 +71,7 @@ func TestAutocompleteDebounceThroughApp(t *testing.T) {
 	for _, msg := range collectCmds(cmd) {
 		m, _ = appUpdate(t, m, msg)
 	}
-	if !m.query.PopupVisible() {
+	if !m.activeSession().Editor.PopupVisible() {
 		t.Fatal("popup did not open after debounce")
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/messenger91/sql-tui/internal/db"
 	"github.com/messenger91/sql-tui/internal/query"
 	"github.com/messenger91/sql-tui/internal/result"
+	"github.com/messenger91/sql-tui/internal/session"
 	"github.com/messenger91/sql-tui/internal/workspace"
 )
 
@@ -305,7 +306,7 @@ func TestQueryExecutionReturnsRows(t *testing.T) {
 
 	updated, cmd := m.Update(query.ExecuteRequestedMsg{SQL: "SELECT 1 AS n"})
 	m = updated.(Model)
-	if !m.query.Running() {
+	if !m.activeSession().Editor.Running() {
 		t.Fatal("query pane not marked running")
 	}
 	if cmd == nil {
@@ -319,13 +320,13 @@ func TestQueryExecutionReturnsRows(t *testing.T) {
 	updated, _ = m.Update(msg)
 	m = updated.(Model)
 
-	if m.lastQueryErr != nil {
-		t.Fatalf("query error: %v", m.lastQueryErr)
+	if s := m.activeSession(); s.State != session.StateDone {
+		t.Fatalf("session state = %v", s.State)
 	}
 	if m.focus != FocusResult {
 		t.Fatalf("focus = %v, want results", m.focus)
 	}
-	res, ok := m.results.Result()
+	res, ok := m.activeSession().Results.Result()
 	if !ok || len(res.Rows) != 1 {
 		t.Fatalf("result = %+v", res)
 	}
@@ -350,10 +351,10 @@ func TestQueryExecutionRunsAllStatements(t *testing.T) {
 
 	updated, _ = m.Update(msg)
 	m = updated.(Model)
-	if m.lastQueryErr != nil {
-		t.Fatalf("query error: %v", m.lastQueryErr)
+	if s := m.activeSession(); s.State != session.StateDone {
+		t.Fatalf("session state = %v", s.State)
 	}
-	res, ok := m.results.Result()
+	res, ok := m.activeSession().Results.Result()
 	if !ok || len(res.Rows) != 1 {
 		t.Fatalf("result = %+v", res)
 	}
@@ -374,14 +375,14 @@ func TestQueryExecutionFailureKeepsFocus(t *testing.T) {
 
 	updated, _ = m.Update(failed)
 	m = updated.(Model)
-	if m.lastQueryErr == nil {
-		t.Fatal("error not recorded")
+	if s := m.activeSession(); s.State != session.StateError {
+		t.Fatalf("session state = %v", s.State)
 	}
 	if m.focus != FocusWorkspace {
 		t.Fatalf("focus changed on failure: %v", m.focus)
 	}
-	if !strings.Contains(m.query.View(), "error:") {
-		t.Fatalf("query pane missing error:\n%s", m.query.View())
+	if !strings.Contains(m.activeSession().Editor.View(), "error:") {
+		t.Fatalf("query pane missing error:\n%s", m.activeSession().Editor.View())
 	}
 }
 
@@ -392,8 +393,8 @@ func TestQueryWithoutConnectionIsRejected(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("executed without a connection")
 	}
-	if !strings.Contains(m.query.View(), "no connection selected") {
-		t.Fatalf("query pane = %q", m.query.View())
+	if !strings.Contains(m.activeSession().Editor.View(), "no connection selected") {
+		t.Fatalf("query pane = %q", m.activeSession().Editor.View())
 	}
 }
 
@@ -430,19 +431,19 @@ func TestViewToggleCyclesFormats(t *testing.T) {
 	for _, want := range steps {
 		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
 		m = updated.(Model)
-		if m.results.Format() != want {
-			t.Fatalf("format = %q, want %q", m.results.Format(), want)
+		if m.activeSession().Results.Format() != want {
+			t.Fatalf("format = %q, want %q", m.activeSession().Results.Format(), want)
 		}
 	}
 }
 
 func TestViewToggleIgnoredOutsideResults(t *testing.T) {
 	m := newSized(t, 80, 24) // workspace focus
-	before := m.results.Format()
+	before := m.activeSession().Results.Format()
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
 	m = updated.(Model)
-	if m.results.Format() != before {
-		t.Fatalf("format changed to %q outside results", m.results.Format())
+	if m.activeSession().Results.Format() != before {
+		t.Fatalf("format changed to %q outside results", m.activeSession().Results.Format())
 	}
 }
 
@@ -451,7 +452,7 @@ func TestViewKeyIsTypedInEditor(t *testing.T) {
 	m.focus = FocusQuery
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
 	m = updated.(Model)
-	if got := m.query.SQL(); got != "v" {
+	if got := m.activeSession().Editor.SQL(); got != "v" {
 		t.Fatalf("editor = %q, want the v keystroke", got)
 	}
 }

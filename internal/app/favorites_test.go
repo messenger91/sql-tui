@@ -42,7 +42,7 @@ func typeRunes(t *testing.T, m Model, text string) Model {
 func saveFavoriteFromQuery(t *testing.T, m Model, name, sql string) Model {
 	t.Helper()
 	m.focus = FocusQuery
-	m.query.SetSQL(sql)
+	m.activeSession().Editor.SetSQL(sql)
 
 	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyCtrlS})
 	if _, _, ok := m.favorites.Modal(); !ok {
@@ -90,7 +90,7 @@ func TestSaveFavoriteWithEmptyEditor(t *testing.T) {
 func TestBrowseAndLoadFavorite(t *testing.T) {
 	m, _ := newFavoritesModel(t)
 	m = saveFavoriteFromQuery(t, m, "one", "SELECT 1")
-	m.query.SetSQL("SELECT 0")
+	m.activeSession().Editor.SetSQL("SELECT 0")
 	m.focus = FocusQuery
 
 	m, _ = appUpdate(t, m, tea.KeyMsg{Type: tea.KeyCtrlF})
@@ -104,7 +104,7 @@ func TestBrowseAndLoadFavorite(t *testing.T) {
 	}
 	m, _ = appUpdate(t, m, cmd())
 
-	if got := m.query.SQL(); got != "SELECT 1" {
+	if got := m.activeSession().Editor.SQL(); got != "SELECT 1" {
 		t.Fatalf("editor = %q", got)
 	}
 	if m.focus != FocusQuery {

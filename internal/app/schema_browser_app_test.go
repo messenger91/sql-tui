@@ -62,7 +62,7 @@ func TestSchemaBrowserInsertIntoEditor(t *testing.T) {
 	if m.browser != nil {
 		t.Fatal("browser did not close after insertion")
 	}
-	if got := m.query.SQL(); got != "id" {
+	if got := m.activeSession().Editor.SQL(); got != "id" {
 		t.Fatalf("editor = %q", got)
 	}
 	if m.focus != FocusQuery {

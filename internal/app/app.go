@@ -20,8 +20,8 @@ import (
 	"github.com/messenger91/sql-tui/internal/export"
 	"github.com/messenger91/sql-tui/internal/favorites"
 	"github.com/messenger91/sql-tui/internal/query"
-	"github.com/messenger91/sql-tui/internal/result"
 	"github.com/messenger91/sql-tui/internal/schema"
+	"github.com/messenger91/sql-tui/internal/session"
 	"github.com/messenger91/sql-tui/internal/styles"
 	"github.com/messenger91/sql-tui/internal/workspace"
 )
@@ -55,11 +55,10 @@ type Model struct {
 	keys      keyMap
 	manager   *db.Manager
 	workspace workspace.Model
-	query     query.Model
-	results   result.Model
 	favorites favorites.Model
 	schema    *schema.Cache
 	clipboard export.Clipboard
+	sessions  *session.Manager
 
 	focus         Focus
 	width, height int
@@ -71,7 +70,7 @@ type Model struct {
 
 	active       *db.Connection
 	schemaLoad   bool
-	lastQueryErr error
+	confirmClose session.ID
 }
 
 // New returns the root model using the platform config directory.
@@ -90,17 +89,18 @@ func NewWithConfig(cfg Config) Model {
 	if clipboard == nil {
 		clipboard = export.SystemClipboard{}
 	}
+	sessions := session.NewManager()
+	sessions.New("")
 	return Model{
 		theme:     styles.Default(),
 		help:      h,
 		keys:      defaultKeyMap(),
 		manager:   manager,
 		workspace: workspace.New(store, manager),
-		query:     query.New(),
-		results:   result.New(),
 		favorites: favorites.New(favoriteStore),
 		schema:    schema.NewCache(),
 		clipboard: clipboard,
+		sessions:  sessions,
 		focus:     FocusWorkspace,
 	}
 }
@@ -119,7 +119,20 @@ func defaultConfig() Config {
 
 // Init implements tea.Model.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.workspace.Init(), m.query.Init(), m.favorites.Init())
+	cmds := []tea.Cmd{m.workspace.Init(), m.favorites.Init()}
+	if s := m.activeSession(); s != nil {
+		cmds = append(cmds, s.Editor.Init())
+	}
+	return tea.Batch(cmds...)
+}
+
+// activeSession returns the focused session. The app always keeps at least one
+// session alive, so callers may assume non-nil outside of construction.
+func (m Model) activeSession() *session.Session {
+	if s, ok := m.sessions.Active(); ok {
+		return s
+	}
+	return nil
 }
 
 // Close releases every open database handle. Call it after the program exits.
@@ -142,22 +155,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.active = &connection
 		m.focus = FocusQuery
 		m.workspace.ActivationSucceeded(connection.ID)
-		m.query.SetSchema(nil)
+		m.focusSessionForConnection(connection.ID)
 		m.syncFocus()
 		cmd := m.refreshSchema(connection)
 		return m, cmd
 	case workspace.DeactivatedMsg:
 		m.active = nil
 		m.schemaLoad = false
-		m.query.SetSchema(nil)
 		return m, nil
 	case schemaLoadedMsg:
 		m.schema.Store(msg.ConnectionID, msg.Tables, msg.Err)
+		entry, ok := m.schema.Get(msg.ConnectionID)
+		for _, s := range m.sessions.Sessions() {
+			if s.ConnectionID == msg.ConnectionID {
+				if ok {
+					s.Editor.SetSchema(entry.Index)
+				} else {
+					s.Editor.SetSchema(nil)
+				}
+			}
+		}
 		if m.active != nil && m.active.ID == msg.ConnectionID {
 			m.schemaLoad = false
-			if entry, ok := m.schema.Get(msg.ConnectionID); ok {
-				m.query.SetSchema(entry.Index)
-			}
 			if m.browser != nil {
 				m.browser.SetTables(msg.Tables)
 			}
@@ -167,18 +186,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.clearNotice()
 		return m.startQuery(msg.SQL)
 	case queryFinishedMsg:
-		m.query.ReportSuccess(msg.Statements, msg.Result)
-		m.results.SetResult(msg.Result)
-		m.lastQueryErr = nil
-		m.focus = FocusResult
-		m.syncFocus()
+		s, ok := m.sessions.Get(msg.SessionID)
+		if !ok {
+			return m, nil
+		}
+		s.Editor.ReportSuccess(msg.Statements, msg.Result)
+		s.Results.SetResult(msg.Result)
+		s.MarkDone()
+		if active := m.activeSession(); active != nil && active.ID == s.ID {
+			m.focus = FocusResult
+			m.syncFocus()
+		}
 		return m, nil
 	case queryFailedMsg:
-		m.query.ReportError(msg.Err)
-		m.lastQueryErr = msg.Err
+		s, ok := m.sessions.Get(msg.SessionID)
+		if !ok {
+			return m, nil
+		}
+		s.Editor.ReportError(msg.Err)
+		s.MarkFailed()
 		return m, nil
 	case favorites.LoadMsg:
-		m.query.SetSQL(msg.SQL)
+		if s := m.activeSession(); s != nil {
+			s.SetSQL(msg.SQL)
+		}
 		m.focus = FocusQuery
 		m.syncFocus()
 		cmd := m.setNotice("loaded favorite: " + msg.Name)
@@ -203,22 +234,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.routeSessionEvent(msg)
 	default:
 		workspaceModel, workspaceCmd := m.workspace.Update(msg)
-		queryModel, queryCmd := m.query.Update(msg)
 		favoritesModel, favoritesCmd := m.favorites.Update(msg)
 		m.workspace = workspaceModel
-		m.query = queryModel
 		m.favorites = favoritesModel
-		return m, tea.Batch(workspaceCmd, queryCmd, favoritesCmd)
+
+		var sessionCmd tea.Cmd
+		if s := m.activeSession(); s != nil {
+			editor, cmd := s.Editor.Update(msg)
+			s.Editor = editor
+			sessionCmd = cmd
+		}
+		return m, tea.Batch(workspaceCmd, favoritesCmd, sessionCmd)
 	}
 }
 
 type queryFinishedMsg struct {
+	SessionID  session.ID
 	Result     db.QueryResult
 	Statements int
 }
 
 type queryFailedMsg struct {
-	Err error
+	SessionID session.ID
+	Err       error
 }
 
 type exportDoneMsg struct {
@@ -251,7 +289,12 @@ func (m Model) submitExport() (tea.Model, tea.Cmd) {
 	dialog := m.export
 	m.export = nil
 
-	payload, ok := m.results.Result()
+	s := m.activeSession()
+	if s == nil {
+		cmd := m.setNotice("no results to export")
+		return m, cmd
+	}
+	payload, ok := s.Results.Result()
 	if !ok {
 		cmd := m.setNotice("no results to export")
 		return m, cmd
@@ -278,37 +321,51 @@ func (m Model) submitExport() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) startQuery(sql string) (tea.Model, tea.Cmd) {
-	if m.active == nil {
-		m.query.SetStatus("no connection selected")
+	s := m.activeSession()
+	if s == nil {
 		return m, nil
 	}
-	handle, ok := m.manager.Get(m.active.ID)
+	connectionID := s.ConnectionID
+	if connectionID == "" && m.active != nil {
+		connectionID = m.active.ID
+		s.ConnectionID = connectionID
+	}
+	if connectionID == "" {
+		s.Editor.SetStatus("no connection selected")
+		return m, nil
+	}
+	handle, ok := m.manager.Get(connectionID)
 	if !ok {
-		m.query.ReportError(errors.New("connection is not open"))
+		s.Editor.ReportError(errors.New("connection is not open"))
+		s.MarkFailed()
 		return m, nil
 	}
-	m.query.MarkRunning()
-	return m, m.executeQuery(handle, sql)
+	ctx, cancel := context.WithCancel(context.Background())
+	s.Title = session.DeriveTitle(sql)
+	s.MarkRunning(cancel)
+	s.Editor.MarkRunning()
+	return m, m.executeQuery(ctx, cancel, handle, s.ID, sql)
 }
 
-func (m Model) executeQuery(handle *sql.DB, sql string) tea.Cmd {
+func (m Model) executeQuery(ctx context.Context, cancel context.CancelFunc, handle *sql.DB, sessionID session.ID, sql string) tea.Cmd {
 	return func() tea.Msg {
+		defer cancel()
 		statements := query.SplitStatements(sql)
 		if len(statements) == 0 {
-			return queryFailedMsg{Err: errors.New("no executable SQL")}
+			return queryFailedMsg{SessionID: sessionID, Err: errors.New("no executable SQL")}
 		}
 
 		started := time.Now()
 		var last db.QueryResult
 		for i, statement := range statements {
-			result := db.Execute(context.Background(), handle, statement, db.DefaultMaxRows)
+			result := db.Execute(ctx, handle, statement, db.DefaultMaxRows)
 			if result.Err != nil {
-				return queryFailedMsg{Err: fmt.Errorf("statement %d: %w", i+1, result.Err)}
+				return queryFailedMsg{SessionID: sessionID, Err: fmt.Errorf("statement %d: %w", i+1, result.Err)}
 			}
 			last = result
 		}
 		last.Elapsed = time.Since(started)
-		return queryFinishedMsg{Result: last, Statements: len(statements)}
+		return queryFinishedMsg{SessionID: sessionID, Result: last, Statements: len(statements)}
 	}
 }
 
@@ -316,13 +373,26 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, m.keys.Quit) {
 		return m, tea.Quit
 	}
+	if m.confirmClose != "" {
+		switch msg.String() {
+		case "y", "Y":
+			id := m.confirmClose
+			m.confirmClose = ""
+			m.closeSession(id)
+		case "n", "N", "esc":
+			m.confirmClose = ""
+		}
+		return m, nil
+	}
 	// The autocomplete popup owns tab (accept), runes (continue typing), and
 	// must not let global bindings swallow them.
-	if m.focus == FocusQuery && m.query.PopupVisible() {
-		if key.Matches(msg, m.keys.Cycle) || msg.Type == tea.KeyRunes {
-			var cmd tea.Cmd
-			m.query, cmd = m.query.Update(msg)
-			return m, cmd
+	if m.focus == FocusQuery {
+		if s := m.activeSession(); s != nil && s.Editor.PopupVisible() {
+			if key.Matches(msg, m.keys.Cycle) || msg.Type == tea.KeyRunes {
+				editor, cmd := s.Editor.Update(msg)
+				s.Editor = editor
+				return m, cmd
+			}
 		}
 	}
 	if m.export != nil {
@@ -367,15 +437,44 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.help.ShowAll = !m.help.ShowAll
 		m.resize()
 		return m, nil
+	case key.Matches(msg, m.keys.NewTab):
+		m.newTab()
+		return m, nil
+	case key.Matches(msg, m.keys.CloseTab):
+		if s := m.activeSession(); s != nil {
+			if s.Running() {
+				m.confirmClose = s.ID
+			} else {
+				m.closeSession(s.ID)
+			}
+		}
+		return m, nil
+	case key.Matches(msg, m.keys.NextTab):
+		m.sessions.Next()
+		m.afterTabSwitch()
+		return m, nil
+	case key.Matches(msg, m.keys.PrevTab):
+		m.sessions.Prev()
+		m.afterTabSwitch()
+		return m, nil
+	case key.Matches(msg, m.keys.JumpTab):
+		m.jumpToTab(msg.String())
+		return m, nil
 	case key.Matches(msg, m.keys.ViewFormat) && m.focus == FocusResult:
-		m.results.CycleFormat()
+		if s := m.activeSession(); s != nil {
+			s.Results.CycleFormat()
+		}
 		return m, nil
 	case key.Matches(msg, m.keys.SaveFav) && m.focus == FocusQuery:
-		if strings.TrimSpace(m.query.SQL()) == "" {
+		s := m.activeSession()
+		if s == nil {
+			return m, nil
+		}
+		if strings.TrimSpace(s.Editor.SQL()) == "" {
 			cmd := m.setNotice("nothing to save")
 			return m, cmd
 		}
-		m.favorites.OpenSave(m.query.SQL())
+		m.favorites.OpenSave(s.Editor.SQL())
 		return m, nil
 	case key.Matches(msg, m.keys.BrowseFav) && m.focus == FocusQuery:
 		m.favorites.OpenBrowse()
@@ -400,7 +499,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.browser = browser
 		return m, nil
 	case key.Matches(msg, m.keys.Export) && m.focus == FocusResult:
-		if _, ok := m.results.Result(); !ok {
+		s := m.activeSession()
+		if s == nil || s.Running() {
+			cmd := m.setNotice("wait for the query to finish")
+			return m, cmd
+		}
+		if _, ok := s.Results.Result(); !ok {
 			cmd := m.setNotice("no results to export")
 			return m, cmd
 		}
@@ -413,32 +517,126 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	if m.focus == FocusQuery {
-		var cmd tea.Cmd
-		m.query, cmd = m.query.Update(msg)
-		return m, cmd
+		if s := m.activeSession(); s != nil {
+			editor, cmd := s.Editor.Update(msg)
+			s.Editor = editor
+			return m, cmd
+		}
 	}
 	if m.focus == FocusResult {
-		var cmd tea.Cmd
-		m.results, cmd = m.results.Update(msg)
-		return m, cmd
+		if s := m.activeSession(); s != nil {
+			results, cmd := s.Results.Update(msg)
+			s.Results = results
+			return m, cmd
+		}
 	}
 	return m, nil
 }
 
-// syncFocus mirrors the pane focus onto child widgets that track it.
+// syncFocus mirrors the pane focus onto session result widgets.
 func (m *Model) syncFocus() {
-	if m.focus == FocusResult {
-		m.results.Focus()
+	active, ok := m.sessions.Active()
+	for _, s := range m.sessions.Sessions() {
+		if ok && s.ID == active.ID && m.focus == FocusResult {
+			s.Results.Focus()
+			continue
+		}
+		s.Results.Blur()
+	}
+}
+
+func (m *Model) afterTabSwitch() {
+	m.applySchemaToActive()
+	m.syncFocus()
+}
+
+func (m *Model) jumpToTab(key string) {
+	if len(key) == 0 {
 		return
 	}
-	m.results.Blur()
+	digit := key[len(key)-1]
+	if digit < '1' || digit > '9' {
+		return
+	}
+	index := int(digit - '1')
+	order := m.sessions.Sessions()
+	if index >= len(order) {
+		return
+	}
+	m.sessions.SetActive(order[index].ID)
+	m.afterTabSwitch()
+}
+
+func (m *Model) focusSessionForConnection(connectionID string) {
+	if s := m.activeSession(); s != nil && s.ConnectionID == "" && !s.Running() {
+		s.ConnectionID = connectionID
+		m.applySchema(s)
+		return
+	}
+	for _, s := range m.sessions.Sessions() {
+		if s.ConnectionID == connectionID {
+			m.sessions.SetActive(s.ID)
+			m.applySchema(s)
+			return
+		}
+	}
+	s := m.sessions.New(connectionID)
+	m.applySchema(s)
+}
+
+func (m *Model) newTab() {
+	connectionID := ""
+	if s := m.activeSession(); s != nil {
+		connectionID = s.ConnectionID
+	}
+	if connectionID == "" && m.active != nil {
+		connectionID = m.active.ID
+	}
+	s := m.sessions.New(connectionID)
+	m.applySchema(s)
+	m.focus = FocusQuery
+	m.syncFocus()
+}
+
+func (m *Model) closeSession(id session.ID) {
+	m.sessions.Close(id)
+	if m.sessions.Len() == 0 {
+		connectionID := ""
+		if m.active != nil {
+			connectionID = m.active.ID
+		}
+		s := m.sessions.New(connectionID)
+		m.applySchema(s)
+	}
+	m.syncFocus()
+}
+
+func (m *Model) applySchema(s *session.Session) {
+	if s == nil || s.ConnectionID == "" {
+		if s != nil {
+			s.Editor.SetSchema(nil)
+		}
+		return
+	}
+	entry, ok := m.schema.Get(s.ConnectionID)
+	if !ok {
+		s.Editor.SetSchema(nil)
+		return
+	}
+	s.Editor.SetSchema(entry.Index)
+}
+
+func (m *Model) applySchemaToActive() {
+	m.applySchema(m.activeSession())
 }
 
 func (m Model) handleBrowserKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	action := m.browser.Update(msg)
 	switch {
 	case action.insert != "":
-		m.query.InsertText(action.insert)
+		if s := m.activeSession(); s != nil {
+			s.Editor.InsertText(action.insert)
+		}
 		m.focus = FocusQuery
 		m.syncFocus()
 		m.browser = nil
@@ -499,9 +697,18 @@ func (m *Model) closeModal() {
 func (m Model) View() string {
 	lay := m.layout()
 
+	var queryContent, resultsContent string
+	if s := m.activeSession(); s != nil {
+		queryContent = m.tabBar(max(lay.rightW-4, 1)) + "\n" + s.Editor.View()
+		resultsContent = s.Results.View()
+	} else {
+		queryContent = "no session"
+		resultsContent = "no results yet"
+	}
+
 	workspaceView := m.pane("Connections", m.workspace.View(), lay.workspaceW, lay.bodyH, m.focus == FocusWorkspace)
-	queryView := m.pane("Query", m.query.View(), lay.rightW, lay.queryH, m.focus == FocusQuery)
-	results := m.pane("Results", m.resultsView(lay.rightW-4), lay.rightW, lay.resultH, m.focus == FocusResult)
+	queryView := m.pane("Query", queryContent, lay.rightW, lay.queryH, m.focus == FocusQuery)
+	results := m.pane("Results", resultsContent, lay.rightW, lay.resultH, m.focus == FocusResult)
 
 	body := lipgloss.JoinHorizontal(
 		lipgloss.Top,
@@ -520,10 +727,35 @@ func (m Model) View() string {
 		view = m.renderModal(view, lay, modalBox{Title: title, Body: body})
 	} else if m.browser != nil {
 		view = m.renderModal(view, lay, modalBox{Title: m.browser.Title(), Body: m.browser.View()})
+	} else if m.confirmClose != "" {
+		view = m.renderModal(view, lay, modalBox{
+			Title: "Close tab",
+			Body:  "The query in this tab is running.\n\ny close · n cancel",
+		})
 	} else if m.modal != nil {
 		view = m.renderModal(view, lay, *m.modal)
 	}
 	return view
+}
+
+func (m Model) tabBar(width int) string {
+	sessions := m.sessions.Sessions()
+	active, _ := m.sessions.Active()
+	parts := make([]string, 0, len(sessions)+1)
+	for i, s := range sessions {
+		label := fmt.Sprintf("%d: ", i+1)
+		if s.Running() {
+			label += "● "
+		}
+		label += s.Title
+		style := m.theme.Status
+		if active != nil && s.ID == active.ID {
+			style = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("62"))
+		}
+		parts = append(parts, style.Render(label))
+	}
+	parts = append(parts, m.theme.PaneTitle.Render("+"))
+	return truncate(strings.Join(parts, m.theme.Status.Render(" │ ")), width)
 }
 
 func (m Model) statusLine(lay layout) string {
@@ -559,8 +791,10 @@ func (m Model) statusLine(lay layout) string {
 func (m *Model) resize() {
 	lay := m.layout()
 	m.workspace.SetSize(max(lay.workspaceW-4, 1), max(lay.bodyH-3, 1))
-	m.query.SetSize(max(lay.rightW-4, 1), max(lay.queryH-3, 1))
-	m.results.SetSize(max(lay.rightW-4, 1), max(lay.resultH-3, 1))
+	for _, s := range m.sessions.Sessions() {
+		s.Editor.SetSize(max(lay.rightW-4, 1), max(lay.queryH-4, 1)) // tab bar row
+		s.Results.SetSize(max(lay.rightW-4, 1), max(lay.resultH-3, 1))
+	}
 	m.favorites.SetSize(lay.width, lay.height)
 	if m.browser != nil {
 		m.browser.SetSize(lay.width, lay.height)
@@ -568,16 +802,6 @@ func (m *Model) resize() {
 	if m.active != nil {
 		m.workspace.SetActive(m.active.ID)
 	}
-}
-
-func (m Model) resultsView(width int) string {
-	if m.query.Running() {
-		return "running…"
-	}
-	if m.lastQueryErr != nil {
-		return "error: " + truncate(m.lastQueryErr.Error(), width)
-	}
-	return m.results.View()
 }
 
 func truncate(text string, width int) string {
